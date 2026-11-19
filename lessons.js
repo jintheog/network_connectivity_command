@@ -1,7 +1,7 @@
 ﻿const host = 'web.example.test';
 const ip = '192.0.2.20';
 const win = '내 PC · Windows PowerShell';
-const linux = '내 PC · Linux 터미널';
+const linux = '클라이언트 VM · Linux 터미널';
 const server = '웹 서버 · Linux 터미널';
 const dns = 'Server:  dns.example.test\nAddress: 10.0.1.53\n\nName:    '+host+'\nAddress: '+ip;
 const ping = 'Reply from '+ip+': bytes=32 time=8ms';
@@ -18,7 +18,7 @@ const units = [
  {tab:'Windows · ping',why:'서버의 응답 확인하기',use:'ICMP라는 제어 메시지로 확인 요청을 보내고 답이 돌아오는지 본다.',where:win,cmd:'ping '+ip,out:ping,look:'Reply from 뒤에 목적지 IP가 있고 time은 응답이 돌아오기까지 걸린 시간이다.',meaning:'서버가 ICMP 요청에 답했다. 같은 서버라도 HTTPS용 TCP 연결은 실패할 수 있다. 반대로 ICMP 응답을 제한한 서버에서도 HTTPS는 열릴 수 있다.'},
  {tab:'Windows · TCP 443',why:'내 PC에서 TCP 연결 시도하기',use:'이름 조회와 ping이 성공해도 웹이 열리지 않을 때 서비스 포트까지 검사한다.',where:win,cmd:'Test-NetConnection '+host+' -Port 443',out:tcp,look:'RemoteAddress와 RemotePort에서 실제 검사 대상을 확인한다. 마지막 줄 TcpTestSucceeded 값을 읽는다.',meaning:'False이면 이 PC에서 그 주소의 443번으로 TCP 연결을 맺는 데 실패했다. True이면 TCP 연결에 성공했다. 인증서와 웹 페이지 응답은 그 뒤에 점검한다.'},
  {tab:'Linux PC · nc',why:'Linux PC에서 같은 포트 테스트하기',use:'클라이언트인 Linux PC에서 TCP 443 연결을 시도한다.',where:linux,cmd:'nc -vz '+ip+' 443',out:'nc: connect to '+ip+' port 443 (tcp) failed: Connection refused',look:'443 (tcp)가 대상 포트다. -v는 자세한 결과를 표시하고 -z는 서비스 데이터를 보내지 않고 연결을 검사한다.',meaning:'이 시도는 연결 거부 응답을 받았다. succeeded가 나오면 이 PC와 대상 포트 사이에서 TCP 연결이 성립한 것이다.'},
- {tab:'Linux 서버 · ss',why:'서버 안에서 수신 상태 확인하기',use:'클라이언트에서 연결에 실패하면 웹 서버에 로그인해 어떤 주소에서 연결을 기다리는지 확인한다.',where:server+' (서버 콘솔 또는 SSH 로그인 후)',cmd:'ss -lnt',out:'State  Recv-Q Send-Q Local Address:Port Peer Address:Port\nLISTEN 0      128    127.0.0.1:443      0.0.0.0:*',look:'-l은 수신 대기, -n은 숫자 표시, -t는 TCP를 뜻한다. LISTEN 줄의 Local Address:Port를 읽는다.',meaning:'이 소켓은 서버 내부 전용 주소 127.0.0.1의 443번에서 기다린다. 외부 PC가 192.0.2.20으로 보낸 연결은 이 소켓이 받을 수 없다. 외부에서 연결할 수 있는지는 클라이언트에서 따로 검사한다.'}]},
+ {tab:'Linux 서버 · ss',why:'서버 안에서 수신 상태 확인하기',use:'클라이언트에서 연결에 실패하면 웹 서버에 로그인해 어떤 주소에서 연결을 기다리는지 확인한다.',where:server+' (서버 콘솔 또는 SSH 로그인 후)',cmd:'ss -lnt',out:'State  Recv-Q Send-Q Local Address:Port Peer Address:Port\nLISTEN 0      128    0.0.0.0:80      0.0.0.0:*',look:'-l은 수신 대기, -n은 숫자 표시, -t는 TCP를 뜻한다. LISTEN 줄의 Local Address:Port를 읽는다.',meaning:'80번은 LISTEN 상태이고 443번 항목은 없다. 현재 이 서버에서 443번 TCP 연결을 기다리는 소켓이 없다. 클라이언트에서 확인한 연결 실패와 함께 읽고 서비스의 수신 설정을 점검한다. 방화벽 상태는 별도 근거가 필요하다.'}]},
  {name:'경로 테스트',title:'목적지까지 어느 장비가 응답할까?',intro:'홉은 경로에서 한 단계 이동하는 것을 뜻한다. TTL은 패킷이 라우터를 몇 번 더 지날 수 있는지 제한하는 값이다. 작은 TTL부터 늘리면서 각 단계에서 돌아오는 응답을 기록한다.',commands:[
  {tab:'Windows · tracert',why:'Windows PC에서 경로 읽기',use:'중간 장비와 목적지 중 어디에서 응답이 왔는지 추적한다.',where:win,cmd:'tracert -d '+ip,out:trace,look:'왼쪽 숫자는 홉 번호, ms 값은 각 시도의 왕복 시간, 오른쪽 주소는 응답한 장비다. 3번 줄에서 세 값을 찾아본다.',meaning:'2번의 별표는 그 시도에 시간 내 응답이 없었다는 뜻이다. 3번과 목적지가 응답했으므로 이 추적은 목적지까지 도달했다. 별표만으로 중간 장비의 고장이나 웹 서비스 상태를 판정할 수 없다.',answer:'3번 홉의 왕복 시간은 5, 6, 5 ms이고 응답 IP는 198.51.100.1이다. -d는 IP를 이름으로 바꾸는 조회를 생략한다.'},
  {tab:'Linux · traceroute',why:'Linux PC에서 경로 읽기',use:'Linux PC에서 같은 서버까지의 경로를 숫자 주소로 살핀다.',where:linux,cmd:'traceroute -n '+ip,out:'1  10.0.1.254     1.0 ms  1.2 ms  1.1 ms\n2  * * *\n3  198.51.100.1   5.1 ms  6.0 ms  5.0 ms\n4  192.0.2.20     8.0 ms  7.2 ms  8.1 ms',look:'-n은 숫자 주소를 표시한다. 각 줄은 홉 번호로 시작하며 이 예에서는 응답 IP 다음에 세 번의 왕복 시간이 나온다.',meaning:'첫 응답 주소는 Linux PC의 웹 서버 전용 경로에서 본 10.0.1.254다. 마지막 줄에서 192.0.2.20이 응답했다.'}]}
