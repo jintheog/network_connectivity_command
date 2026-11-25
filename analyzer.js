@@ -946,6 +946,20 @@
       if (pkg) base.values.install = 'sudo dnf install -y ' + pkg;
       ev(base, 'tool', nf.line);
       nf.extra.forEach(l => ev(base, 'tool', l));
+      // 실행 위치가 틀린 경우: Linux 명령을 Windows PowerShell에서, Windows 명령을 VM 안에서 실행했다.
+      const LINUX_ONLY = ['ip', 'ss', 'nc', 'ncat', 'traceroute', 'dig', 'host'];
+      const WINDOWS_ONLY = ['test-netconnection', 'tnc', 'ipconfig', 'tracert'];
+      if (nf.os === 'windows' && LINUX_ONLY.indexOf(tool.toLowerCase()) >= 0) {
+        base.values.wrongPlace = 'windows';
+        base.message = tool + '는 Linux 명령인데 Windows PowerShell에서 실행했다. 도구가 없는 것이 아니라 실행 위치가 다르다. PowerShell에서 ssh 사용자이름@VM주소 로 VM에 접속한 뒤, 프롬프트가 $로 끝나는지 확인하고 다시 실행한다.';
+        return finish(base, expect);
+      }
+      if (nf.os === 'linux' && WINDOWS_ONLY.indexOf(tool.toLowerCase()) >= 0) {
+        base.values.wrongPlace = 'linux';
+        base.values.package = null; delete base.values.install;
+        base.message = tool + '는 Windows PowerShell 명령인데 VM(Linux) 안에서 실행했다. exit로 SSH 접속을 끝내고, 프롬프트가 PS C:\\...> 로 돌아온 뒤 다시 실행한다.';
+        return finish(base, expect);
+      }
       if (nf.os === 'linux' && isIp(tool)) {
         base.message = '"' + tool + '"는 명령이 아니라 주소다. 명령 이름 없이 주소만 입력해서 셸이 이것을 명령으로 찾다가 실패했다. 주소 앞에 ping 같은 명령 이름을 붙여 다시 실행한다.';
       } else if (nf.os === 'linux') {

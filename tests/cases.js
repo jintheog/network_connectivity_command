@@ -470,6 +470,18 @@
       t.eq([c.values.destinationReplies, c.values.errorReplies], [4, 0], '실제 샘플');
     });
 
+    // ---------- 3차: 실행 위치가 틀린 경우 ----------
+    test('[직접 만든 예시] Linux 명령을 Windows PowerShell에서 실행: 설치 안내 대신 SSH 접속 안내', t => {
+      const r = A.analyze("PS C:\\Users\\jin> ip -br addr\nip : 'ip' 용어가 cmdlet, 함수, 스크립트 파일 또는 실행할 수 있는 프로그램 이름으로 인식되지 않습니다.", { expect: 'ip-br-addr' });
+      t.eq([r.status, r.kind, r.values.wrongPlace, r.values.install], ['notfound', 'ip-br-addr', 'windows', undefined]);
+      t.ok(/ssh/.test(r.message), 'SSH 접속 안내');
+    });
+    test('[직접 만든 예시] Windows 명령을 VM 안에서 실행: 설치 안내 없이 exit 안내', t => {
+      const r = A.analyze('[jin@localhost ~]$ Test-NetConnection 172.16.89.128 -Port 22\nbash: Test-NetConnection: command not found...');
+      t.eq([r.status, r.values.wrongPlace, r.values.install], ['notfound', 'linux', undefined]);
+      t.ok(/exit/.test(r.message), 'exit 안내');
+    });
+
     const passed = results.filter(r => r.ok).length;
     return { results, passed, failed: results.length - passed, total: results.length };
   }

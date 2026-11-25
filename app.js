@@ -265,12 +265,19 @@ notes.onreset=()=>{
 };
 evidenceViews();
 function showPage(scroll){
+  // 새 Linux 실습 페이지(lab.js)면 예전 실습 페이지를 모두 숨긴다.
+  if(window.Lab && Lab.route(location.hash,scroll)){
+    document.querySelectorAll('.page').forEach(p=>p.hidden=true);
+    document.querySelectorAll('#menu .navlink').forEach(a=>{a.classList.remove('active');a.removeAttribute('aria-current');});
+    by('legacy-hero').hidden=true;
+    return;
+  }
   const index=Math.max(0,ids.indexOf(location.hash.slice(1)));
   const shortcut=unitTabs.find(t=>t.id===ids[index]);
   const page=shortcut?shortcut.page:by(ids[index]);
   if(shortcut)shortcut.open();
   document.querySelectorAll('.page').forEach(p=>p.hidden=p!==page);
-  document.querySelectorAll('.navlink').forEach((a,k)=>{
+  document.querySelectorAll('#menu .navlink').forEach((a,k)=>{
     a.classList.toggle('active',k===index);
     if(k===index)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');
   });
@@ -278,7 +285,7 @@ function showPage(scroll){
     const a=by(id);a.hidden=!names[k];
     if(names[k]){a.href='#'+ids[k];a.textContent=id==='prev'?'‹ '+names[k]:names[k]+' ›';}
   }
-  document.querySelector('.hero').hidden=ids[index]==='incident';
+  by('legacy-hero').hidden=ids[index]==='incident';
   if(scroll)page.scrollIntoView({block:'start'});
 }
 showPage(false);
