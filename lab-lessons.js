@@ -133,6 +133,384 @@
     },
   };
 
+  // ===== 0단계 · 실습 환경 준비 (SPEC 13장 [원고]) =====
+  // setup 카드는 '출력을 눈으로 보고 확인 질문에 답하기'가 기본이고, 붙여넣기는 선택이다.
+  //   ask[]        확인 질문 (type: text / choice / check). rule이 있으면 붙여 넣은 출력으로 정답을 확인한다.
+  //   fixes[]      원고의 '이렇게 나오면' [key, 내용]
+  //   check(ctx)   { state: ready | problem | unknown | blank, fix, why, save }
+  //                ctx = { answers, result(붙여 넣은 출력의 분석 결과 또는 null), env }
+  PLACES['win-ps'] = {
+    label: 'Windows PC의 PowerShell',
+    kind: 'windows',
+    detail: ['시작 메뉴에서 PowerShell을 검색해 연다. VM 터미널이 아니다.'],
+    prompt: 'PS C:\\>',
+  };
+  const isV4 = s => /^(?:\d{1,3}\.){3}\d{1,3}$/.test(s) && s.split('.').every(n => +n <= 255);
+  const ans = (ctx, k) => String(ctx.answers[k] || '').trim();
+  const analyzer = () => root.NetAnalyzer;
+  // 붙여 넣은 출력이 있지만 읽을 수 없는 경우(다른 명령, 일부 누락, 알아볼 수 없음)
+  const unreadable = res => ({ state: 'unknown', why: res.message + (res.recopy ? ' ' + res.recopy : '') });
+
+  // ----- 0-1 -----
+  CARDS['setup-os'] = {
+    setup: true,
+    no: '0-1',
+    title: '어떤 리눅스가 설치되어 있는가? — cat /etc/os-release',
+    question: '이 VM에 설치된 리눅스의 이름과 버전은 무엇인가?',
+    place: 'vm-console',
+    command: () => 'cat /etc/os-release',
+    lead: 'VMware 화면 안의 VM 터미널에서 프롬프트 뒤에 아래 명령을 입력하고 Enter를 누른다.',
+    parts: [
+      ['cat', '파일의 내용을 화면에 그대로 보여주는 명령이다.'],
+      ['/etc/os-release', '리눅스가 자기 이름과 버전을 적어 두는 파일이다. /etc는 시스템 설정 파일이 모여 있는 폴더다.'],
+    ],
+    values: () => '바꿀 값이 없다. 그대로 입력한다.',
+    ends: '파일 내용을 보여주고 바로 끝난다. 프롬프트가 다시 나타나면 끝난 것이다.',
+    example: {
+      title: '출력 예시 (실제로는 줄이 더 많다)',
+      shown: 'NAME="CentOS Stream"\nVERSION="10 (Coughlan)"\nID_LIKE="rhel fedora"\nVERSION_ID="10"\nPRETTY_NAME="CentOS Stream 10 (Coughlan)"',
+      output: '[jin@localhost ~]$ cat /etc/os-release\nNAME="CentOS Stream"\nVERSION="10 (Coughlan)"\nID_LIKE="rhel fedora"\nVERSION_ID="10"\nPRETTY_NAME="CentOS Stream 10 (Coughlan)"',
+      note: '아래 출력은 예시다. 내 VM의 출력과 다를 수 있다.',
+    },
+    reading: [
+      'PRETTY_NAME은 사람이 읽기 쉬운 형태의 OS 이름이다. 이 줄 하나로 무엇이 설치되어 있는지 알 수 있다.',
+      'VERSION_ID는 버전 번호다.',
+      'ID_LIKE="rhel fedora"는 이 리눅스가 Red Hat Enterprise Linux(RHEL) 계열이라는 뜻이다. RHEL 계열은 명령과 설정 방식이 거의 같다. 그래서 이 교재의 명령은 CentOS Stream, Rocky Linux, AlmaLinux에서 똑같이 쓸 수 있다.',
+    ],
+    fixes: [
+      ['ok', 'CentOS Stream 9 또는 10, Rocky Linux 9 또는 10: 그대로 진행한다.'],
+      ['eol', 'CentOS Linux 7, CentOS Linux 8, CentOS Stream 8: 지원이 끝난 버전이다. 프로그램을 설치하는 0-3에서 실패할 수 있다. 새 버전으로 VM을 다시 만드는 것을 권한다.'],
+      ['nofile', 'No such file or directory: 파일 이름의 철자를 확인한다. os-release는 하이픈(-)으로 이어진 한 단어다.'],
+    ],
+    ask: [
+      { key: 'os.pretty', type: 'text', label: '확인 질문: 내 VM의 PRETTY_NAME은 무엇인가?', placeholder: '따옴표 안의 값', rule: 'os.pretty' },
+      { key: 'os.nofile', type: 'check', label: 'PRETTY_NAME 대신 No such file or directory가 나왔다' },
+    ],
+    expect: 'os-release',
+    pasteLabel: 'VM 터미널 출력 (선택)',
+    check(ctx) {
+      const res = ctx.result;
+      const bySupport = (support, name) => support === 'supported' ? { state: 'ready', fix: 'ok', why: name + ': 이 교재의 명령을 그대로 쓸 수 있다.' }
+        : support === 'eol' ? { state: 'problem', fix: 'eol', why: name + '은(는) 지원이 끝난 버전이다.' }
+        : support === 'unlisted' ? { state: 'unknown', why: name + '은(는) RHEL 계열이지만 원고의 목록(9 또는 10)에 없는 버전이다. 이 교재는 9·10 기준이다.' }
+        : { state: 'unknown', why: '"' + name + '"을(를) CentOS Stream, Rocky Linux, AlmaLinux 같은 RHEL 계열 이름으로 알아보지 못했다. PRETTY_NAME 줄의 따옴표 안 값을 그대로 적었는지 확인한다.' };
+      if (res) {
+        if (res.status === 'ok') return bySupport(res.values.support, res.values.prettyName);
+        if (res.status === 'fail' && res.outcome === 'no-file') return { state: 'problem', fix: 'nofile', why: res.message };
+        return unreadable(res);
+      }
+      if (ans(ctx, 'os.nofile')) return { state: 'problem', fix: 'nofile', why: 'No such file or directory가 나왔다.' };
+      const name = ans(ctx, 'os.pretty');
+      if (!name) return { state: 'blank' };
+      return bySupport(analyzer().classifyOs(name).support, name);
+    },
+  };
+
+  // ----- 0-2 (1)(2)(3) -----
+  const SETUP_NET_PLACE = 'vm-console';
+  CARDS['setup-ip'] = {
+    setup: true,
+    no: '0-2 (1)',
+    title: 'VM이 IP 주소를 받았는가? — ip -br addr',
+    question: 'VM이 IP 주소를 받았는가?',
+    place: SETUP_NET_PLACE,
+    command: () => 'ip -br addr',
+    lead: '세 명령을 하나씩 입력한다. 결과를 확인한 뒤 다음 명령으로 넘어간다. 먼저 아래 명령을 입력하고 Enter를 누른다.',
+    parts: [
+      ['ip', '리눅스의 네트워크 설정을 보고 바꾸는 명령이다.'],
+      ['addr', 'address(주소)를 줄인 말이다. 주소 정보를 보여 달라는 뜻이다.'],
+      ['-br', 'brief(짧게)를 줄인 옵션이다. 장치 하나당 한 줄로 요약해서 보여준다.'],
+    ],
+    values: () => '바꿀 값이 없다. 그대로 입력한다.',
+    ends: '결과를 보여주고 바로 끝난다.',
+    example: {
+      title: '출력 예시',
+      shown: 'lo               UNKNOWN        127.0.0.1/8 ::1/128\nens160           UP             172.16.89.128/24 fe80::20c:29ff:fe8f:fd2d/64',
+      output: '[jin@localhost ~]$ ip -br addr\nlo               UNKNOWN        127.0.0.1/8 ::1/128\nens160           UP             172.16.89.128/24 fe80::20c:29ff:fe8f:fd2d/64',
+      note: '아래 값(ens160, 172.16.89.128)은 예시다. 내 VM의 값과 다르다.',
+    },
+    readingLead: '한 줄이 네트워크 장치 하나다. 이 장치를 인터페이스라고 한다. 인터페이스는 컴퓨터가 네트워크에 연결되는 통로다. 첫 칸은 장치 이름, 둘째 칸은 상태, 그 뒤는 그 장치에 붙은 주소다.',
+    reading: [
+      'lo는 컴퓨터가 자기 자신과 통신할 때 쓰는 가상 장치다. 상태가 UNKNOWN으로 나오는 것이 정상이다. 점검 대상이 아니다.',
+      'ens160은 VMware가 VM에 만들어 준 네트워크 장치다. 환경에 따라 ens33, eth0처럼 다른 이름일 수 있다.',
+      'UP은 장치가 켜져 있다는 뜻이다.',
+      '172.16.89.128/24는 이 VM의 IPv4 주소다. 슬래시(/) 앞이 주소이고, 뒤의 24는 같은 네트워크를 구분하는 접두사 길이다. 자세한 뜻은 1단계에서 다룬다.',
+      'fe80::로 시작하는 값은 IPv6 주소다. 지금은 IPv4 주소만 확인한다.',
+    ],
+    fixes: [
+      ['nonet', 'lo 말고 다른 줄이 없거나, 장치가 DOWN이거나, IPv4 주소가 없다: VM이 네트워크에 연결되지 않았다. VMware 메뉴 VM → Settings → Network Adapter에서 Connected와 Connect at power on이 체크되어 있는지 확인한다. 그다음 VM에서 sudo nmcli device connect ens160을 실행한다. ens160은 내 장치 이름으로 바꾼다.'],
+    ],
+    askLead: '확인 질문: lo가 아닌 장치의 이름과 IPv4 주소(슬래시 앞부분)는 무엇인가? 이 주소는 0-4와 1단계에서 계속 쓰므로 적어 둔다.',
+    ask: [
+      { key: 'setup.device', type: 'text', label: 'lo가 아닌 장치의 이름', placeholder: '장치 이름', rule: 'br.device' },
+      { key: 'setup.ipv4', type: 'text', label: '그 장치의 IPv4 주소(슬래시 앞부분)', placeholder: 'IPv4 주소', rule: 'br.ipv4' },
+      { key: 'setup.nonet', type: 'check', label: 'lo 말고 다른 줄이 없거나, 장치가 DOWN이거나, IPv4 주소가 없다' },
+    ],
+    expect: 'ip-br-addr',
+    pasteLabel: 'VM 터미널 출력 (선택)',
+    check(ctx) {
+      const res = ctx.result;
+      const dev = ans(ctx, 'setup.device');
+      if (res) {
+        if (res.status === 'fail') return { state: 'problem', fix: 'nonet', why: res.message };
+        if (res.status !== 'ok') return unreadable(res);
+        const usable = res.values.usable;
+        const u = usable.find(x => x.name === dev) || (usable.length === 1 ? usable[0] : null);
+        if (!u) return { state: 'ready', why: 'IPv4 주소가 붙은 장치가 ' + usable.length + '개다(' + usable.map(x => x.name).join(', ') + '). 확인 질문에 점검할 장치 이름을 적으면 그 장치를 내 환경 정보에 저장한다.' };
+        return { state: 'ready', why: u.name + ' 장치가 켜져 있고(UP) IPv4 주소 ' + u.ipv4[0] + '가 붙어 있다.', save: { device: u.name, ipv4: u.ipv4[0], prefix: u.prefix[0], interfaces: usable.map(x => x.name) } };
+      }
+      if (ans(ctx, 'setup.nonet')) return { state: 'problem', fix: 'nonet', why: 'lo 말고 쓸 수 있는 장치나 IPv4 주소가 없다.' };
+      const raw = ans(ctx, 'setup.ipv4');
+      if (!dev && !raw) return { state: 'blank' };
+      const ip = raw.replace(/\/\d+$/, '');
+      const prefix = /\/(\d+)$/.test(raw) ? +/\/(\d+)$/.exec(raw)[1] : null;
+      if (!dev || !raw) return { state: 'unknown', why: '장치 이름과 IPv4 주소를 모두 적어야 판정할 수 있다.' };
+      if (dev === 'lo') return { state: 'unknown', why: 'lo는 점검 대상이 아니다. lo가 아닌 장치의 이름을 적는다.' };
+      if (!isV4(ip)) return { state: 'unknown', why: '"' + raw + '"은(는) IPv4 주소 모양(점으로 나뉜 숫자 네 덩어리)이 아니다. 슬래시 앞부분을 그대로 적는다.' };
+      if (/^127\./.test(ip)) return { state: 'unknown', why: '127.로 시작하는 주소는 lo의 주소다. lo가 아닌 장치의 주소를 적는다.' };
+      return { state: 'ready', why: dev + ' 장치에 IPv4 주소 ' + ip + '가 있다고 답했다.', save: { device: dev, ipv4: ip, prefix } };
+    },
+  };
+
+  const PING_COUNTS = ['4번', '3번', '2번', '1번', '0번 (응답 없음)', 'Network is unreachable가 나왔다'];
+  CARDS['setup-ping-ip'] = {
+    setup: true,
+    no: '0-2 (2)',
+    title: '인터넷에 닿는가? — ping -c 4 8.8.8.8',
+    question: '인터넷에 닿는가?',
+    place: SETUP_NET_PLACE,
+    command: () => 'ping -c 4 8.8.8.8',
+    lead: '(1)의 결과를 확인했으면 같은 터미널에서 아래 명령을 입력하고 Enter를 누른다.',
+    parts: [
+      ['ping', '상대 장비에 \'응답해 달라\'는 짧은 확인 메시지를 보내고 답이 돌아오는지 본다. 이 확인 메시지를 ICMP 요청이라고 한다.'],
+      ['-c 4', 'count(횟수)의 c다. 네 번만 보내고 끝내라는 뜻이다. 이 옵션이 없으면 리눅스의 ping은 멈추지 않고 계속 보낸다. 그때는 Ctrl + C를 눌러 멈춘다.'],
+      ['8.8.8.8', '구글이 운영하는 공개 DNS 서버의 IP 주소다. 늘 켜져 있고 ping에 응답하는 잘 알려진 주소라서 인터넷 연결을 확인할 때 자주 쓴다.'],
+    ],
+    values: () => '바꿀 값이 없다. 그대로 입력한다.',
+    ends: '1초에 한 번씩 네 번 보낸 뒤 통계 줄을 출력하고 끝난다. 3~4초쯤 걸린다.',
+    example: {
+      title: '출력 예시',
+      shown: 'PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.\n64 bytes from 8.8.8.8: icmp_seq=1 ttl=128 time=51.1 ms\n64 bytes from 8.8.8.8: icmp_seq=2 ttl=128 time=1215 ms\n64 bytes from 8.8.8.8: icmp_seq=3 ttl=128 time=391 ms\n64 bytes from 8.8.8.8: icmp_seq=4 ttl=128 time=160 ms\n\n--- 8.8.8.8 ping statistics ---\n4 packets transmitted, 4 received, 0% packet loss, time 3053ms',
+      note: '아래 출력은 예시다. 내 VM의 출력과 다를 수 있다.',
+    },
+    reading: [
+      '64 bytes from 8.8.8.8 로 시작하는 줄 하나가 응답 하나다. icmp_seq는 몇 번째 요청에 대한 응답인지를, time은 요청을 보내고 응답을 받기까지 걸린 시간(왕복 시간)을 나타낸다.',
+      '통계 줄의 4 packets transmitted, 4 received는 네 번 보내 네 번 받았다는 뜻이다. 0% packet loss는 응답을 받지 못한 요청이 없다는 뜻이다.',
+      'time 값이 줄마다 크게 달라도 응답이 왔다면 연결은 된 것이다. 시간은 Windows PC의 인터넷 상태에 따라 달라진다.',
+    ],
+    fixes: [
+      ['loss', '100% packet loss 또는 Network is unreachable: VM에서 인터넷으로 나가지 못한다. 먼저 Windows에서 인터넷이 되는지, (1)에서 IPv4 주소가 있었는지 확인한다.'],
+      ['some', '일부만 응답했다(예: 4 packets transmitted, 3 received): 연결은 되지만 불안정하다. 실습은 계속할 수 있다.'],
+    ],
+    ask: [
+      { key: 'setup.ping.count', type: 'choice', label: '확인 질문: 네 번 중 몇 번 응답을 받았는가?', choices: PING_COUNTS, rule: 'setup.ping.count' },
+    ],
+    expect: 'ping',
+    pasteLabel: 'VM 터미널 출력 (선택)',
+    check(ctx) {
+      const res = ctx.result;
+      if (res) {
+        if (res.status === 'ok') {
+          return res.outcome === 'all'
+            ? { state: 'ready', why: res.message }
+            : { state: 'ready', fix: 'some', why: res.message };
+        }
+        if (res.status === 'fail' && (res.outcome === 'none' || res.outcome === 'network-unreachable')) return { state: 'problem', fix: 'loss', why: res.message };
+        if (res.status === 'fail') return { state: 'unknown', why: res.message };
+        return unreadable(res);
+      }
+      const a = ans(ctx, 'setup.ping.count');
+      if (!a) return { state: 'blank' };
+      if (a === '4번') return { state: 'ready', why: '네 번 보내 네 번 응답을 받았다.' };
+      if (/^[123]번$/.test(a)) return { state: 'ready', fix: 'some', why: '네 번 중 ' + a + ' 응답을 받았다.' };
+      return { state: 'problem', fix: 'loss', why: a === PING_COUNTS[5] ? 'Network is unreachable가 나왔다.' : '응답을 하나도 받지 못했다.' };
+    },
+  };
+
+  CARDS['setup-ping-name'] = {
+    setup: true,
+    no: '0-2 (3)',
+    title: '도메인 이름을 IP 주소로 바꿀 수 있는가? — ping -c 4 google.com',
+    question: '도메인 이름을 IP 주소로 바꿀 수 있는가?',
+    place: SETUP_NET_PLACE,
+    command: () => 'ping -c 4 google.com',
+    lead: '(2)의 결과를 확인했으면 같은 터미널에서 아래 명령을 입력하고 Enter를 누른다.',
+    parts: [
+      ['google.com', '이번에는 IP 주소 대신 도메인 이름을 넣는다. 컴퓨터는 이름만으로는 통신할 수 없다. 먼저 DNS 서버에 \'google.com의 IP 주소가 무엇인가\'를 묻고, 답으로 받은 IP로 ping을 보낸다. 이름을 IP로 바꾸는 이 과정을 이름 조회(DNS 조회)라고 한다.'],
+    ],
+    values: () => '바꿀 값이 없다. 그대로 입력한다.',
+    ends: '(2)와 같다.',
+    example: {
+      title: '출력 예시',
+      shown: 'PING google.com (142.250.23.138) 56(84) bytes of data.\n64 bytes from zj-in-f138.1e100.net (142.250.23.138): icmp_seq=1 ttl=128 time=135 ms\n(응답 줄 3개 더)\n\n--- google.com ping statistics ---\n4 packets transmitted, 4 received, 0% packet loss, time 3004ms',
+      output: '[jin@localhost ~]$ ping -c 4 google.com\nPING google.com (142.250.23.138) 56(84) bytes of data.\n64 bytes from zj-in-f138.1e100.net (142.250.23.138): icmp_seq=1 ttl=128 time=135 ms\n64 bytes from zj-in-f138.1e100.net (142.250.23.138): icmp_seq=2 ttl=128 time=43.3 ms\n64 bytes from zj-in-f138.1e100.net (142.250.23.138): icmp_seq=3 ttl=128 time=42.5 ms\n64 bytes from zj-in-f138.1e100.net (142.250.23.138): icmp_seq=4 ttl=128 time=50.8 ms\n\n--- google.com ping statistics ---\n4 packets transmitted, 4 received, 0% packet loss, time 3004ms',
+      note: '아래 값(142.250.23.138)은 예시다. 조회되는 IP는 위치와 시간에 따라 달라질 수 있다.',
+    },
+    reading: [
+      '첫 줄 괄호 안의 142.250.23.138이 이름 조회로 얻은 IP다. 이 줄이 나왔다면 이름 조회는 성공한 것이다. 조회되는 IP는 위치와 시간에 따라 달라질 수 있다.',
+      '응답 줄의 zj-in-f138.1e100.net은 그 IP에 붙은 이름이다. 1e100.net은 구글이 자기 서버에 쓰는 도메인이다.',
+    ],
+    // 원고의 '(2)와 (3)을 함께 읽기'. 페이지 끝에서 (2)·(3)의 판정으로 맞는 줄을 고른다.
+    fixes: [
+      ['both-ok', '둘 다 성공했다: 인터넷 연결과 이름 조회가 모두 된다. 다음 점검으로 넘어간다.'],
+      ['dns', '(2)는 성공했는데 (3)에서 Name or service not known 또는 Temporary failure in name resolution이 나왔다: 인터넷에는 닿지만 이름을 IP로 바꾸지 못한다. 문제는 DNS 쪽이다.'],
+      ['both-fail', '둘 다 실패했다: 이름 조회를 보기 전에 인터넷 연결부터 확인한다.'],
+    ],
+    fixesTitle: '(2)와 (3)을 함께 읽기',
+    fixesOutro: '이처럼 IP로 한 번, 이름으로 한 번 확인하면 문제가 연결 자체에 있는지 이름 조회에 있는지 나눠서 볼 수 있다.',
+    ask: [
+      { key: 'setup.dns.ip', type: 'text', label: '확인 질문: google.com은 어떤 IP로 조회되었는가?', placeholder: 'IP 주소', rule: 'setup.dns.ip' },
+      { key: 'setup.dns.fail', type: 'check', label: 'IP 대신 Name or service not known 또는 Temporary failure in name resolution이 나왔다' },
+    ],
+    expect: 'ping',
+    pasteLabel: 'VM 터미널 출력 (선택)',
+    check(ctx) {
+      const res = ctx.result;
+      const pingIp = ctx.others && ctx.others['setup-ping-ip'];
+      const failFix = pingIp && pingIp.state === 'problem' ? 'both-fail' : 'dns';
+      if (res) {
+        if (res.outcome === 'resolve-fail') return { state: 'problem', fix: failFix, why: res.message };
+        if (res.values && res.values.targetIp && (res.status === 'ok' || res.status === 'fail')) {
+          return { state: 'ready', fix: pingIp && pingIp.state === 'ready' ? 'both-ok' : null, why: 'google.com을 ' + res.values.targetIp + '로 조회했다. 이름 조회는 성공했다.' + (res.status === 'fail' ? ' 다만 ping 응답은 받지 못했다. ' + res.message : '') };
+        }
+        return unreadable(res);
+      }
+      if (ans(ctx, 'setup.dns.fail')) return { state: 'problem', fix: failFix, why: '이름 조회에 실패했다는 메시지가 나왔다.' };
+      const ip = ans(ctx, 'setup.dns.ip');
+      if (!ip) return { state: 'blank' };
+      if (!isV4(ip) && !/:/.test(ip)) return { state: 'unknown', why: '"' + ip + '"은(는) IP 주소 모양이 아니다. 첫 줄 괄호 안의 값을 적는다.' };
+      return { state: 'ready', fix: pingIp && pingIp.state === 'ready' ? 'both-ok' : null, why: 'google.com을 ' + ip + '로 조회했다고 답했다. 이름 조회는 성공했다.' };
+    },
+  };
+
+  // ----- 0-3 -----
+  const SETUP_PKGS = ['bind-utils', 'traceroute', 'nmap-ncat'];
+  const DNF_ENDS = ['Complete!', 'Nothing to do.', 'Sorry, try again.', 'jin is not in the sudoers file', 'Failed to download metadata 또는 Cannot download repomd.xml', 'Unable to find a match'];
+  const DNF_END_FIX = { 'Complete!': null, 'Nothing to do.': 'nothing', 'Sorry, try again.': 'pw', 'jin is not in the sudoers file': 'sudoers', 'Failed to download metadata 또는 Cannot download repomd.xml': 'repo', 'Unable to find a match': 'match' };
+  const DNF_OUTCOME_FIX = { 'wrong-password': 'pw', 'not-sudoer': 'sudoers', repo: 'repo', 'no-match': 'match' };
+  CARDS['setup-dnf'] = {
+    setup: true,
+    no: '0-3',
+    title: '실습 도구가 설치되어 있는가? — sudo dnf install',
+    question: '1단계에서 쓸 nslookup, traceroute, nc 명령이 준비되어 있는가?',
+    place: 'vm-console',
+    command: () => 'sudo dnf install -y bind-utils traceroute nmap-ncat',
+    lead: 'VMware 화면 안의 VM 터미널에서 아래 명령을 입력하고 Enter를 누른다.',
+    parts: [
+      ['sudo', '뒤에 오는 명령을 관리자 권한으로 실행한다. 프로그램 설치처럼 시스템을 바꾸는 작업에는 관리자 권한이 필요하다. 실행하면 [sudo] password for jin: 처럼 비밀번호를 묻는다. 로그인할 때 쓴 내 계정 비밀번호를 입력한다. 입력하는 동안 화면에 아무것도 표시되지 않는데, 정상이다. 다 입력하고 Enter를 누른다.'],
+      ['dnf', 'CentOS Stream과 Rocky Linux에서 프로그램을 설치·삭제·업데이트하는 도구다. 설치 단위는 패키지라고 부른다. 패키지는 프로그램과 그 설정 파일을 하나로 묶은 것이다.'],
+      ['install', '설치하라는 뜻이다.'],
+      ['-y', '설치 도중 \'진행할까요?\'라고 묻는 질문에 자동으로 yes라고 답한다.'],
+      ['bind-utils', 'nslookup 명령이 들어 있는 패키지다. 이처럼 패키지 이름과 명령 이름이 다를 수 있다.'],
+      ['traceroute', 'traceroute 명령이 들어 있는 패키지다.'],
+      ['nmap-ncat', 'nc 명령이 들어 있는 패키지다.'],
+    ],
+    values: () => '바꿀 값이 없다. 그대로 입력한다.',
+    ends: '마지막에 Complete! 또는 Nothing to do. 가 나오고 프롬프트가 돌아오면 끝난 것이다. 인터넷 속도에 따라 수십 초 걸릴 수 있다.',
+    example: {
+      output: '[jin@localhost ~]$ sudo dnf install -y bind-utils traceroute nmap-ncat\n[sudo] password for jin: \nCentOS Stream 10 - BaseOS                       666 kB/s | 2.3 MB     00:03\nPackage bind-utils-32:9.18.33-31.el10.x86_64 is already installed.\nPackage nmap-ncat-4:7.92-5.el10.x86_64 is already installed.\nDependencies resolved.\n================================================================================\n Package            Architecture    Version                  Repository    Size\n================================================================================\nInstalling:\n traceroute         x86_64          3:2.1.6-3.el10           baseos        60 k\n\nTransaction Summary\n================================================================================\nInstall  1 Package\n\nImporting GPG key 0x8483C65D:\nKey imported successfully\n\nInstalled:\n  traceroute-3:2.1.6-3.el10.x86_64\n\nComplete!',
+      note: '아래 출력은 예시다. 내 VM에서는 이미 설치된 패키지가 다를 수 있다.',
+    },
+    readingTitle: '출력 읽기 (실제 출력에서 중요한 줄만 골랐다)',
+    readingLines: [
+      ['CentOS Stream 10 - BaseOS   666 kB/s | 2.3 MB  00:03', '설치할 수 있는 패키지 목록(저장소 정보)을 내려받는 중이다.'],
+      ['Package bind-utils-32:9.18.33-31.el10.x86_64 is already installed.', '이미 설치되어 있어서 건너뛴다.'],
+      ['Installing: 아래의 traceroute', '새로 설치할 패키지다.'],
+      ['Importing GPG key ... Key imported successfully', '패키지가 공식 배포처에서 온 것이 맞는지 확인하는 서명 키를 처음 등록하는 과정이다. 처음 설치할 때 한 번 나오는 정상 메시지다.'],
+      ['Complete!', '설치가 끝났다.'],
+    ],
+    fixes: [
+      ['nothing', 'Nothing to do.: 세 패키지가 모두 이미 설치되어 있다. 그대로 진행한다.'],
+      ['pw', 'Sorry, try again.: 비밀번호가 틀렸다. 다시 입력한다.'],
+      ['sudoers', 'jin is not in the sudoers file: 이 계정에 관리자 권한이 없다. 관리자 권한이 있는 계정이나 root로 로그인해 설치한다.'],
+      ['repo', 'Failed to download metadata 또는 Cannot download repomd.xml: 패키지 저장소에 접속하지 못했다. 0-2의 인터넷 연결과 이름 조회를 다시 확인한다. 지원이 끝난 버전(0-1 참고)에서도 이 오류가 난다.'],
+      ['match', 'Unable to find a match: 패키지 이름의 철자를 확인한다.'],
+    ],
+    askLead: '확인 질문: 세 패키지 가운데 새로 설치된 것과 이미 설치되어 있던 것은 각각 무엇인가?',
+    ask: SETUP_PKGS.map(p => ({ key: 'setup.pkg.' + p, type: 'choice', label: p, choices: ['새로 설치됨', '이미 설치되어 있었음'], rule: 'setup.pkg' }))
+      .concat([{ key: 'setup.dnf.end', type: 'choice', label: '마지막에 나온 줄(또는 오류)은 무엇인가?', choices: DNF_ENDS }]),
+    expect: 'dnf',
+    pasteLabel: 'VM 터미널 출력 (선택)',
+    check(ctx) {
+      const res = ctx.result;
+      if (res) {
+        if (res.status === 'ok') return { state: 'ready', fix: res.outcome === 'nothing' ? 'nothing' : null, why: res.message };
+        if (res.status === 'fail') return { state: 'problem', fix: DNF_OUTCOME_FIX[res.outcome] || null, why: res.message };
+        return unreadable(res);
+      }
+      const end = ans(ctx, 'setup.dnf.end');
+      if (!end) {
+        return SETUP_PKGS.some(p => ans(ctx, 'setup.pkg.' + p)) ? { state: 'unknown', why: '마지막에 나온 줄을 골라야 설치가 끝났는지 판정할 수 있다.' } : { state: 'blank' };
+      }
+      if (end === 'Complete!') return { state: 'ready', why: 'Complete!가 나왔다. 설치가 끝났다.' };
+      if (end === 'Nothing to do.') return { state: 'ready', fix: 'nothing', why: 'Nothing to do.가 나왔다.' };
+      return { state: 'problem', fix: DNF_END_FIX[end], why: end + '가 나왔다.' };
+    },
+  };
+
+  // ----- 0-4 -----
+  const SSH_RESULTS = ['프롬프트가 jin@localhost:~$ 같은 리눅스 프롬프트로 바뀌었다', 'Connection timed out', 'Connection refused', 'Permission denied, please try again.', "'ssh' 용어가 ... 인식되지 않습니다", 'Are you sure you want to continue connecting (yes/no/[fingerprint])? 에서 멈춰 있다'];
+  const SSH_RESULT_FIX = { 1: 'timeout', 2: 'refused', 3: 'denied', 4: 'nossh' };
+  const SSH_OUTCOME_FIX = { timeout: 'timeout', refused: 'refused', denied: 'denied' };
+  const sshTarget = env => (env.user || '계정이름') + '@' + (env.ipv4 || 'VM주소');
+  CARDS['setup-ssh'] = {
+    setup: true,
+    no: '0-4',
+    title: '내 Windows PC에서 VM에 접속할 수 있는가? — ssh',
+    question: 'Windows PC에서 VM에 원격으로 접속해 명령을 실행할 수 있는가?',
+    why: '왜 필요한가: VMware 화면 안의 터미널은 Windows와 복사·붙여넣기가 되지 않을 수 있다. Windows의 PowerShell에서 SSH로 VM에 접속하면 명령은 VM에서 실행되고 출력은 PowerShell 창에 나타난다. 그래서 평소처럼 복사할 수 있다. 1단계부터는 이 방법으로 실습한다.',
+    place: 'win-ps',
+    command: env => 'ssh ' + sshTarget(env),
+    needs: env => [env.user ? null : '계정이름', env.ipv4 ? null : 'VM주소'].filter(Boolean),
+    lead: 'Windows PC의 PowerShell에서 아래 명령을 입력하고 Enter를 누른다.',
+    parts: [
+      ['ssh', '다른 컴퓨터에 암호화된 연결로 접속해 명령을 실행하는 프로그램이다. Windows 10과 11에는 기본으로 들어 있다.'],
+      ['jin@172.16.89.128', '\'172.16.89.128 컴퓨터에 jin 계정으로 접속한다\'는 뜻이다. @ 앞이 계정, 뒤가 접속할 컴퓨터다.'],
+    ],
+    values: () => '바꿀 값: jin은 VM에 로그인할 때 쓰는 계정 이름으로 바꾼다. 172.16.89.128은 0-2에서 확인한 내 VM의 IPv4 주소로 바꾼다.',
+    editSsh: true,
+    endsTitle: '진행 순서',
+    endsSteps: [
+      '처음 접속하면 The authenticity of host ... can\'t be established. 라는 문장과 함께 Are you sure you want to continue connecting (yes/no/[fingerprint])? 라고 묻는다. 처음 접속하는 컴퓨터라서 접속할 컴퓨터가 맞는지 확인하는 질문이다. 내 VM에 접속하는 것이 맞으므로 yes를 입력하고 Enter를 누른다. 한 번 답하면 다음부터는 묻지 않는다.',
+      'jin@172.16.89.128\'s password: 가 나오면 VM 계정 비밀번호를 입력한다. 이번에도 화면에는 아무것도 표시되지 않는다.',
+      '프롬프트가 PS C:\\...> 에서 jin@localhost:~$ 같은 리눅스 프롬프트로 바뀌면 접속에 성공한 것이다. 창은 PowerShell이지만 지금부터 입력하는 명령은 VM 안에서 실행된다.',
+      '접속을 끝낼 때는 exit를 입력한다. 프롬프트가 다시 PS C:\\...> 로 돌아온다.',
+    ],
+    example: {
+      output: 'PS C:\\Users\\jin> ssh jin@172.16.89.128\nThe authenticity of host \'172.16.89.128 (172.16.89.128)\' can\'t be established.\nED25519 key fingerprint is SHA256:(예시 지문).\nAre you sure you want to continue connecting (yes/no/[fingerprint])? yes\nWarning: Permanently added \'172.16.89.128\' (ED25519) to the list of known hosts.\njin@172.16.89.128\'s password:\nLast login: Wed Nov 25 17:52:07 2026 from 172.16.89.1\njin@localhost:~$',
+      note: '아래 값(jin, 172.16.89.128)은 예시다. 내 계정 이름과 VM 주소는 다르다.',
+    },
+    reading: [],
+    fixes: [
+      ['timeout', 'Connection timed out: 정해진 시간 안에 VM에서 아무 응답도 받지 못했다. IP 주소를 잘못 입력했거나 VM이 꺼져 있을 수 있다. 0-2에서 확인한 주소와 VM 상태를 다시 확인한다.'],
+      ['refused', 'Connection refused: VM까지는 닿았지만, VM에서 SSH 접속을 받는 프로그램(sshd)이 실행되고 있지 않다는 거절 응답이 돌아왔다. VM 터미널에서 sudo systemctl enable --now sshd를 실행해 sshd를 켜고 다시 접속한다.'],
+      ['denied', 'Permission denied, please try again.: 계정 이름이나 비밀번호가 틀렸다. root 계정은 기본 설정상 비밀번호로 SSH 접속할 수 없으므로 일반 계정으로 접속한다.'],
+      ['nossh', '\'ssh\' 용어가 ... 인식되지 않습니다: Windows에 SSH 프로그램이 없다. Windows 설정의 \'선택적 기능\'에서 OpenSSH 클라이언트를 추가한다.'],
+    ],
+    fixesOutro: 'Connection timed out(응답 없음)과 Connection refused(거절 응답)의 차이는 1단계의 nc 실습에서 다시 다룬다.',
+    ask: [
+      { key: 'setup.ssh.result', type: 'choice', label: '접속 결과는 어떻게 나왔는가?', choices: SSH_RESULTS },
+      { key: 'setup.ssh.who', type: 'choice', label: '확인 질문: 접속에 성공한 상태에서 ip -br addr를 실행하면 누구의 주소가 나오는가?', choices: ['Windows PC의 주소', 'VM의 주소'], rule: 'setup.ssh.who', fixed: true },
+    ],
+    expect: 'ssh',
+    pasteLabel: 'PowerShell 출력 (선택)',
+    check(ctx) {
+      const res = ctx.result;
+      if (res) {
+        if (res.status === 'ok') return { state: 'ready', why: res.message };
+        if (res.status === 'notfound' && res.kind === 'ssh') return { state: 'problem', fix: 'nossh', why: res.message };
+        if (res.status === 'fail') return { state: 'problem', fix: SSH_OUTCOME_FIX[res.outcome] || null, why: res.message };
+        return unreadable(res);
+      }
+      const a = ans(ctx, 'setup.ssh.result');
+      if (!a) return { state: 'blank' };
+      const i = SSH_RESULTS.indexOf(a);
+      if (i === 0) return { state: 'ready', why: '리눅스 프롬프트로 바뀌었다. 접속에 성공했다.' };
+      if (i === 5) return { state: 'unknown', why: '아직 접속 중이다. 내 VM에 접속하는 것이 맞으므로 yes를 입력하고 Enter를 누른 뒤 진행 순서 2번부터 이어 간다.' };
+      return { state: 'problem', fix: SSH_RESULT_FIX[i], why: a + '가 나왔다.' };
+    },
+  };
+
   // ===== 채점 규칙 =====
   // 각 규칙은 (분석 결과, ctx) → { accept, show, lines, explain, type } 또는 { skip } 를 돌려준다.
   // ctx.answers: 학습자의 답(문제 key → 값), ctx.env: 지금 카드가 쓰는 환경 정보(실제 또는 예시)
@@ -220,14 +598,84 @@
     },
   };
 
-  const PAGES = [
+  // ----- 0단계 확인 질문의 채점 규칙 (붙여 넣은 출력이 있을 때만 쓴다. fixed는 출력 없이도 채점) -----
+  const normName = s => String(s || '').replace(/["']/g, '').replace(/\s+/g, ' ').trim();
+  RULES['os.pretty'] = res => ({
+    type: 'text', accept: [normName(res.values.prettyName)], show: res.values.prettyName,
+    lines: res.evidence.prettyName || [],
+    explain: 'PRETTY_NAME= 뒤의 따옴표 안 값이 사람이 읽기 쉬운 형태의 OS 이름이다. 따옴표는 빼고 적어도 된다.',
+  });
+  RULES['setup.ping.count'] = res => {
+    const v = res.values;
+    const show = res.outcome === 'network-unreachable' ? PING_COUNTS[5] : v.destinationReplies > 0 ? v.destinationReplies + '번' : PING_COUNTS[4];
+    return {
+      type: 'choice', accept: [show], show,
+      lines: (res.evidence.received || res.evidence.error || []),
+      explain: res.outcome === 'network-unreachable' ? 'Network is unreachable는 요청을 보낼 경로가 없어 보내지도 못했다는 뜻이다.'
+        : '통계 줄의 "' + v.transmitted + ' packets transmitted, ' + v.received + ' received"는 ' + v.transmitted + '번 보내 ' + v.received + '번 받았다는 뜻이다.',
+    };
+  };
+  RULES['setup.dns.ip'] = res => {
+    if (!res.values.targetIp) return { skip: '이 출력에는 조회된 IP가 없어 채점하지 않는다.' };
+    return {
+      type: 'ip', accept: [res.values.targetIp], show: res.values.targetIp, lines: res.evidence.target || [],
+      explain: '첫 줄 괄호 안의 값이 이름 조회로 얻은 IP다. 조회되는 IP는 위치와 시간에 따라 달라질 수 있으므로 내 출력의 값이 정답이다.',
+    };
+  };
+  RULES['setup.pkg'] = (res, ctx) => {
+    const p = ctx.q.key.replace('setup.pkg.', '');
+    const st = res.values.packages && res.values.packages[p];
+    if (!st || st === 'unknown') return { skip: '이 출력에서는 ' + p + '가 새로 설치되었는지 알 수 없어 채점하지 않는다.' };
+    const show = st === 'new' ? '새로 설치됨' : '이미 설치되어 있었음';
+    return {
+      type: 'choice', accept: [show], show,
+      lines: res.evidence['pkg:' + p] || res.evidence.end || [],
+      explain: st === 'new' ? 'Installing: 아래 표나 Installed: 아래에 나온 패키지는 새로 설치한 것이다.'
+        : res.values.nothingToDo && !(res.evidence['pkg:' + p] || []).length ? 'Nothing to do.는 요청한 패키지가 모두 이미 설치되어 있다는 뜻이다.'
+        : 'Package ... is already installed. 줄은 이미 설치되어 있어서 건너뛴다는 뜻이다.',
+    };
+  };
+  RULES['setup.ssh.who'] = () => ({
+    type: 'choice', accept: ['VM의 주소'], show: 'VM의 주소', lines: [],
+    explain: 'VM의 주소가 나온다. 창은 Windows의 PowerShell이지만 명령은 SSH로 접속한 VM에서 실행되기 때문이다. 이 내용은 2단계에서 다시 다룬다.',
+  });
+
+  // 1단계 실행 위치에 0-4의 접속 명령을 채운다
+  PLACES['ssh-vm'].connect = env => 'ssh ' + sshTarget(env);
+  EXAMPLE_ENV.user = 'jin';
+
+  const SETUP_PAGES = [
+    { id: 'setup-os', menu: 'OS 확인', no: '0-1', cards: ['setup-os'], group: '0단계 · 실습 환경 준비',
+      title: '어떤 리눅스가 설치되어 있는가?',
+      introTitle: '0단계를 시작하기 전에',
+      intro: [
+        '명령 실습을 시작하기 전에 실습할 VM이 준비되었는지 확인한다. 확인할 것은 네 가지다. 어떤 리눅스가 설치되어 있는가, VM이 네트워크에 연결되어 있는가, 실습에 쓸 도구가 설치되어 있는가, 내 Windows PC에서 VM에 접속할 수 있는가. 이 네 가지가 준비되면 1단계부터 막힘없이 진행할 수 있다.',
+        '0-1부터 0-3까지는 VMware 화면 안의 VM 터미널에서 실행한다. VMware에서 VM을 켜고 계정 이름과 비밀번호로 로그인하면 jin@localhost:~$ 나 [jin@localhost ~]$ 처럼 끝에 $가 붙은 줄이 나타난다. 이 줄을 프롬프트라고 한다. 컴퓨터가 명령을 기다리고 있다는 표시다. 프롬프트 뒤에 명령을 입력하고 Enter를 누른다. 프롬프트 자체는 입력하지 않는다.',
+      ] },
+    { id: 'setup-net', menu: '네트워크 확인', no: '0-2', cards: ['setup-ip', 'setup-ping-ip', 'setup-ping-name'], group: '0단계 · 실습 환경 준비',
+      title: 'VM이 네트워크에 연결되어 있는가? — ip -br addr, ping',
+      intro: [
+        '이 명령들로 답할 질문: VM이 IP 주소를 받았는가? 인터넷에 닿는가? 도메인 이름을 IP 주소로 바꿀 수 있는가?',
+        '실행 위치: VMware 화면 안의 VM 터미널',
+        '세 명령을 하나씩 입력한다. 결과를 확인한 뒤 다음 명령으로 넘어간다.',
+      ],
+      together: 'setup-ping-name' },
+    { id: 'setup-dnf', menu: '실습 도구 설치', no: '0-3', cards: ['setup-dnf'], group: '0단계 · 실습 환경 준비',
+      title: '실습 도구가 설치되어 있는가?',
+      intro: [] },
+    { id: 'setup-ssh', menu: 'Windows에서 SSH 접속', no: '0-4', cards: ['setup-ssh'], group: '0단계 · 실습 환경 준비',
+      title: '내 Windows PC에서 VM에 접속할 수 있는가?',
+      intro: ['0-1부터 0-3까지와 달리 이번 명령은 VM 터미널이 아니라 Windows PC의 PowerShell에서 실행한다.'] },
+  ];
+
+  const PAGES = SETUP_PAGES.concat([
     { id: 'lab-ip-br', menu: 'ip -br addr', cards: ['ip-br-addr'], group: '1단계 · 명령 익히기',
       title: '이 VM의 장치와 IP 주소 찾기',
       intro: '1단계에서는 명령의 뜻을 읽고, 내 터미널에 직접 입력하고, 나온 출력에서 값을 찾는다. 먼저 이 VM에 어떤 네트워크 장치가 있고 어떤 주소가 붙어 있는지 확인한다.' },
     { id: 'lab-ip-addr', menu: 'ip addr show dev', cards: ['ip-addr-dev'], group: '1단계 · 명령 익히기',
       title: '고른 장치의 주소 자세히 읽기',
       intro: '1-1에서 고른 장치 하나만 자세히 본다. 같은 주소가 inet 줄에 어떻게 나오는지, inet과 inet6이 어떻게 다른지 읽는다.' },
-  ];
+  ]);
 
   root.LabData = { PLACES, CARDS, RULES, PAGES, EXAMPLE_ENV };
 })(typeof self !== 'undefined' ? self : this);

@@ -43,7 +43,8 @@
   function S(key, mode) {
     state[key] = state[key] || {};
     if (!state[key][mode]) {
-      state[key][mode] = { text: mode === 'example' ? D.CARDS[key].example.output : '', result: null, answers: {}, graded: null, stale: false, picked: null };
+      const ex = D.CARDS[key].example;
+      state[key][mode] = { text: mode === 'example' ? ex.output || ex.shown : '', result: null, answers: {}, graded: null, stale: false, picked: null, checked: null };
     }
     return state[key][mode];
   }
@@ -71,7 +72,8 @@
     if (mode === 'example') values = '<span class="ex-tag">예시</span> 예시 장치 <code>' + esc(e.device) + '</code>를 채웠다. 실제 실습에서는 1-1에서 고른 내 장치 이름이 채워진다.';
     return '<div class="lab-guide">' +
       step(1, '이 명령으로 답할 질문', '<p class="ask">' + c.question + '</p>') +
-      step(2, '어디에서 실행하는가', '<p class="place"><span>' + (place.kind === 'linux' ? 'Linux' : 'Windows') + '</span>' + esc(place.label) + '</p>' + place.detail.map(p => '<p>' + p + '</p>').join('')) +
+      step(2, '어디에서 실행하는가', '<p class="place"><span>' + (place.kind === 'linux' ? 'Linux' : 'Windows') + '</span>' + esc(place.label) + '</p>' + place.detail.map(p => '<p>' + p + '</p>').join('') +
+        (place.connect ? '<p class="connect">0-4의 접속 명령 (Windows PowerShell에서 실행): <code>' + esc(place.connect(e)) + '</code>' + (mode === 'real' && (!env.user || !env.ipv4) ? ' <span class="small">0-2와 0-4를 마치면 내 값이 채워진다.</span>' : '') + '</p>' : '')) +
       step(3, '입력할 명령', '<p>' + c.lead + '</p><div class="cmdline"><span class="prompt" aria-hidden="true" title="프롬프트는 입력하지 않는다">' + esc(place.prompt) + '</span><code>' + cmdShown + '</code><button type="button" class="lab-copy" data-copy="' + esc(cmd) + '">복사</button></div>' +
         '<p class="small">회색 <code>' + esc(place.prompt) + '</code>는 프롬프트라서 복사되지 않는다. 한 번에 이 명령 하나만 입력한다.' + (hole ? ' <mark>' + esc(hole) + '</mark> 부분은 내 값으로 바꿔야 한다.' : '') + '</p>') +
       step(4, '단어·옵션의 뜻', '<dl class="parts">' + c.parts.map(p => '<dt><code>' + p[0] + '</code></dt><dd>' + p[1] + '</dd>').join('') + '</dl>') +
@@ -191,11 +193,168 @@
     return '';
   }
 
-  function cardHTML(key) {
-    const c = D.CARDS[key], mode = modeOf(key);
+  function cardHeadHTML(key, mode) {
+    const c = D.CARDS[key];
+    const src = c.setup && mode === 'real'
+      ? '지금 쓰는 결과: <b>' + SOURCE[mode] + '</b> (붙여 넣지 않으면 내 답으로 판정한다)'
+      : '지금 쓰는 결과: <b>' + SOURCE[mode] + '</b>' + (mode === 'example' ? ' (내 VM의 값이 아님)' : '');
     return '<div class="lab-card-head"><span class="card-no">' + esc(c.no) + '</span><h3>' + esc(c.title) + '</h3>' +
       '<div class="mode-switch" role="group" aria-label="실습 방식"><button type="button" data-mode="real" aria-pressed="' + (mode === 'real') + '">실제 터미널 실습</button><button type="button" data-mode="example" aria-pressed="' + (mode === 'example') + '">예시로 연습</button></div>' +
-      '<p class="source ' + mode + '" role="status">지금 쓰는 결과: <b>' + SOURCE[mode] + '</b>' + (mode === 'example' ? ' (내 VM의 값이 아님)' : '') + '</p></div>' +
+      '<p class="source ' + mode + '" role="status">' + src + '</p></div>';
+  }
+  const ENV_NAMES = { device: '장치', ipv4: 'VM IPv4', prefix: '접두사 길이', user: '계정 이름' };
+  const sshTarget = e => (e.user || '계정이름') + '@' + (e.ipv4 || 'VM주소');
+
+  // ---------- 0단계(실습 환경 준비) 카드 ----------
+  // 기본은 '출력을 눈으로 보고 확인 질문에 답하기'. 붙여넣기는 선택이다.
+  const READY = { ready: ['준비됨', 'ok'], problem: ['문제 있음', 'fail'], unknown: ['판정 불가', 'warn'] };
+  const fixText = (c, k) => { const f = (c.fixes || []).find(x => x[0] === k); return f ? f[1] : ''; };
+
+  function setupGuideHTML(key, mode) {
+    const c = D.CARDS[key], place = D.PLACES[c.place], e = envFor(mode);
+    const cmd = c.command(e);
+    const holes = mode === 'real' && c.needs ? c.needs(e) : [];
+    let cmdShown = esc(cmd);
+    holes.forEach(h => { cmdShown = cmdShown.replace(esc(h), '<mark>' + esc(h) + '</mark>'); });
+    let n = 0;
+    let values = '<p>' + c.values(e) + '</p>';
+    if (c.editSsh && mode === 'real') {
+      const u = 'ssh-u-' + (++uid), i = 'ssh-i-' + uid;
+      values += '<div class="dev-edit"><label for="' + u + '">계정 이름</label><input id="' + u + '" class="ssh-user" value="' + esc(env.user || '') + '" placeholder="예: jin" autocomplete="off" spellcheck="false"></div>' +
+        '<div class="dev-edit"><label for="' + i + '">VM 주소</label><input id="' + i + '" class="ssh-ip" value="' + esc(env.ipv4 || '') + '" placeholder="0-2에서 확인한 IPv4" autocomplete="off" spellcheck="false"><button type="button" class="minor ssh-apply">명령에 채우기</button></div>' +
+        '<p class="small">' + (env.ipv4 ? 'VM 주소는 0-2에서 저장한 값을 채웠다. ' : 'VM 주소는 0-2에서 확인하면 자동으로 채워진다. ') + '계정 이름은 VM에 로그인할 때 쓰는 이름을 적는다. 둘 다 내 환경 정보에 저장한다.</p>';
+    }
+    if (mode === 'example' && c.editSsh) values += '<p><span class="ex-tag">예시</span> 예시 값 <code>' + esc(sshTarget(e)) + '</code>를 채웠다.</p>';
+    let h = step(++n, '이 명령으로 답할 질문', '<p class="ask">' + esc(c.question) + '</p>' + (c.why ? '<p>' + esc(c.why) + '</p>' : '')) +
+      step(++n, '실행 위치', '<p class="place"><span>' + (place.kind === 'linux' ? 'Linux' : 'Windows') + '</span>' + esc(place.label) + '</p>' + place.detail.map(p => '<p>' + p + '</p>').join('')) +
+      step(++n, '입력할 명령', '<p>' + esc(c.lead) + '</p><div class="cmdline"><span class="prompt" aria-hidden="true" title="프롬프트는 입력하지 않는다">' + esc(place.prompt) + '</span><code>' + cmdShown + '</code><button type="button" class="lab-copy" data-copy="' + esc(cmd) + '">복사</button></div>' +
+        '<p class="small">회색 <code>' + esc(place.prompt) + '</code>는 프롬프트라서 입력하지 않는다.' + (holes.length ? ' <mark>' + holes.map(esc).join('</mark>, <mark>') + '</mark> 부분은 내 값으로 바꿔야 한다.' : '') + (c.place === 'vm-console' ? ' VMware 화면에서는 복사 버튼으로 붙여 넣을 수 없을 수 있다. 그때는 보고 직접 입력한다.' : '') + '</p>') +
+      step(++n, '명령의 뜻', '<dl class="parts">' + c.parts.map(p => '<dt><code>' + esc(p[0]) + '</code></dt><dd>' + esc(p[1]) + '</dd>').join('') + '</dl>') +
+      step(++n, '바꿔야 할 값', values) +
+      step(++n, c.endsTitle || '언제 끝나는가', c.endsSteps ? '<ol class="setup-steps">' + c.endsSteps.map(s => '<li>' + esc(s) + '</li>').join('') + '</ol>' : '<p>' + esc(c.ends) + '</p>');
+    if (c.example && c.example.shown) {
+      h += step(++n, c.example.title || '출력 예시', '<p class="small"><span class="ex-tag">예시</span>' + esc(c.example.note) + '</p><div class="console ex-console"><div class="bar">출력 예시 · 내 VM의 값이 아니다</div><pre>' + esc(c.example.shown) + '</pre></div>');
+    }
+    if ((c.reading && c.reading.length) || c.readingLines) {
+      let r = c.readingLead ? '<p>' + esc(c.readingLead) + '</p>' : '';
+      if (c.readingLines) r += '<dl class="read-lines">' + c.readingLines.map(x => '<dt><code>' + esc(x[0]) + '</code></dt><dd>' + esc(x[1]) + '</dd>').join('') + '</dl>';
+      else r += '<ul class="guide">' + c.reading.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>';
+      h += step(++n, c.readingTitle || '출력 읽기', r);
+    }
+    h += step(++n, c.fixesTitle || '이렇게 나오면', '<ul class="fixes">' + c.fixes.map(f => '<li data-fix="' + esc(f[0]) + '">' + esc(f[1]) + '</li>').join('') + '</ul>' + (c.fixesOutro ? '<p>' + esc(c.fixesOutro) + '</p>' : ''));
+    return { html: '<div class="lab-guide">' + h + '</div>', n };
+  }
+
+  function setupWorkHTML(key, mode, n) {
+    const c = D.CARDS[key], st = S(key, mode);
+    const fields = c.ask.map(q => {
+      const id = 'q-' + (++uid), v = st.answers[q.key] || '';
+      if (q.type === 'check') return '<div class="q q-check"><label for="' + id + '"><input type="checkbox" id="' + id + '" data-q="' + q.key + '"' + (v ? ' checked' : '') + '> ' + esc(q.label) + '</label></div>';
+      const control = q.type === 'choice'
+        ? '<select id="' + id + '" data-q="' + q.key + '"><option value="">고른다</option>' + q.choices.map(o => '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>').join('') + '</select>'
+        : '<input id="' + id + '" data-q="' + q.key + '" value="' + esc(v) + '" placeholder="' + esc(q.placeholder || '') + '" autocomplete="off" spellcheck="false">';
+      return '<div class="q"><label for="' + id + '">' + esc(q.label) + '</label>' + control + '</div>';
+    }).join('');
+    let h = '<form class="lab-step answers setup-form"><h4><b>' + (++n) + '</b>출력을 눈으로 보고 확인 질문에 답하기</h4>' +
+      '<p class="small">명령을 실행하고 화면에 나온 출력을 보며 답한다. 붙여 넣지 않아도 이 답만으로 점검하고 다음으로 넘어갈 수 있다.</p>' +
+      (c.askLead ? '<p class="ask">' + esc(c.askLead) + '</p>' : '') + fields;
+    if (mode === 'example') {
+      h += '<div class="lab-step optional"><h4><b>' + (++n) + '</b>예시 출력 보기</h4><p class="small"><span class="ex-tag">예시</span>' + esc(c.example.note) + ' 이 예시 출력을 보고 답한다.</p>' +
+        '<div class="console ex-console"><div class="bar">예시 출력 · 내 VM의 값이 아니다</div><pre>' + esc(st.text) + '</pre></div></div>';
+    } else {
+      const id = 'paste-' + (++uid);
+      h += '<details class="lab-step optional"' + (st.text ? ' open' : '') + '><summary><b>' + (++n) + '</b>(선택) 복사할 수 있으면 붙여 넣어 자동 확인</summary>' +
+        '<p class="small">' + (c.place === 'vm-console' ? 'VMware 화면에서는 복사가 안 될 수 있다. 복사할 수 있을 때만 ' : 'PowerShell 창에서 ') + '명령 줄부터 프롬프트가 다시 나오기 전 줄까지 붙여 넣는다. 붙여 넣으면 출력을 기준으로 판정하고 답을 채점한다.</p>' +
+        '<label for="' + id + '">' + esc(c.pasteLabel) + '</label><textarea id="' + id + '" class="paste" rows="7" spellcheck="false" autocomplete="off" placeholder="복사한 출력을 여기에 붙여 넣는다 (선택)">' + esc(st.text) + '</textarea>' +
+        (st.text ? '<button type="button" class="minor clear">붙여넣기 지우기</button>' : '') + '</details>';
+    }
+    h += '<div class="actions"><button class="primary">점검하기</button></div></form>';
+    h += '<div class="after-paste">' + setupResultHTML(key, mode, ++n) + '</div>';
+    return h;
+  }
+
+  function setupResultHTML(key, mode, n) {
+    const c = D.CARDS[key], st = S(key, mode), ck = st.checked;
+    if (!ck) return '';
+    if (ck.state === 'blank') return step(n, '점검 결과', '<p class="redo">확인 질문에 답하거나 출력을 붙여 넣은 뒤 \'점검하기\'를 누른다.</p>', 'setup-result');
+    const [label, cls] = READY[ck.state];
+    const basis = st.result ? (mode === 'example' ? '예시 출력 기준' : '내 출력 기준') : '내 답 기준';
+    let b = '<div class="ready-box ' + ck.state + '"><p><span class="chip ' + cls + '">' + label + '</span> <span class="small">' + basis + '으로 판정했다.</span></p><p>' + esc(ck.why || '') + '</p>';
+    if (ck.fix) b += '<div class="fix-box"><b>' + (ck.state === 'problem' ? '이렇게 나오면' : '해당하는 안내') + '</b><p>' + esc(fixText(c, ck.fix)) + '</p></div>';
+    if (ck.state === 'problem' && !ck.fix) b += '<p class="small">원고의 \'이렇게 나오면\'에 없는 경우다. 위 설명과 출력을 함께 확인한다.</p>';
+    if (st.result && st.result.notes.length) b += '<ul class="notes">' + st.result.notes.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>';
+    if (ck.saved) b += '<p class="picked">내 환경 정보에 저장했다: ' + Object.keys(ck.saved).filter(k => ck.saved[k] != null && k !== 'interfaces').map(k => esc(ENV_NAMES[k] || k) + ' <code>' + esc(ck.saved[k]) + '</code>').join(' · ') + '. 0-4의 ssh 명령과 1단계 명령에 채운다.</p>';
+    if (ck.save && mode === 'example') b += '<p><span class="ex-tag">예시</span> 예시 값이라 내 환경 정보에는 저장하지 않는다.</p>';
+    b += '</div>';
+    // 확인 질문 채점
+    if (st.graded && st.graded.length) {
+      b += st.graded.map(x => {
+        const r = x.rule;
+        if (x.verdict === 'unchecked') {
+          return '<div class="verdict blank"><p class="vq">' + esc(x.q.label) + '</p><strong>출력을 붙여 넣지 않아 정답과 비교하지 않았다</strong><dl><dt>내 답</dt><dd>' + esc(x.raw || '미입력') + '</dd></dl></div>';
+        }
+        let v = '<div class="verdict ' + x.verdict + '"><p class="vq">' + esc(x.q.label) + '</p><strong>' + VERDICT[x.verdict] + '</strong>';
+        if (x.verdict === 'skip') return v + '<p>' + esc(r.skip) + '</p></div>';
+        v += '<dl><dt>내 답</dt><dd>' + esc(x.raw || '미입력') + '</dd><dt>' + (x.q.fixed ? '정답' : '이 출력에서의 정답') + '</dt><dd>' + esc(r.show) + '</dd></dl>';
+        if (r.lines.length) v += '<p class="ev-title">근거가 된 원문 줄</p><pre class="quote">' + esc(r.lines.join('\n')) + '</pre>';
+        return v + '<p><b>' + (x.q.fixed ? '정답과 해설' : '쉬운 해설') + '</b> ' + esc(r.explain) + '</p></div>';
+      }).join('');
+    }
+    const page = D.PAGES.find(p => p.cards.indexOf(key) >= 0), i = D.PAGES.indexOf(page);
+    if (page.cards[page.cards.length - 1] === key && D.PAGES[i + 1]) {
+      const np = D.PAGES[i + 1];
+      b += '<p><a class="next-link" href="#' + np.id + '">다음: ' + esc(np.no || D.CARDS[np.cards[0]].no) + ' ' + esc(np.menu) + ' →</a></p>';
+    }
+    return step(n, '점검 결과', b, 'setup-result');
+  }
+
+  function runSetupCheck(key, mode) {
+    const c = D.CARDS[key], st = S(key, mode);
+    const text = (st.text || '').trim();
+    st.result = text ? A.analyze(st.text, { expect: c.expect }) : null;
+    if (st.result && st.result.status === 'empty') st.result = null;
+    const others = {};
+    Object.keys(D.CARDS).forEach(k => { if (k !== key && D.CARDS[k].setup && state[k] && state[k][mode] && state[k][mode].checked) others[k] = state[k][mode].checked; });
+    const ck = c.check({ answers: st.answers, result: st.result, env: envFor(mode), others });
+    st.checked = ck;
+    // 확인 질문 채점: 출력이 있으면 출력 기준, 없으면 내 답만 보여준다 (fixed는 늘 채점)
+    const alias = Object.assign({}, st.answers);
+    c.ask.forEach(q => { if (typeof q.rule === 'string') alias[q.rule] = st.answers[q.key]; });
+    const ok = st.result && (st.result.status === 'ok' || (st.result.status === 'fail' && st.result.kind === c.expect));
+    st.graded = c.ask.filter(q => q.rule).map(q => {
+      const raw = String(st.answers[q.key] || '').trim();
+      if (!q.fixed && !ok) return { q, verdict: 'unchecked', raw };
+      const rule = D.RULES[q.rule](st.result, { answers: alias, env: envFor(mode), q });
+      if (!rule.skip && !rule.accept.length) rule.skip = '이 출력에는 정답이 될 값이 없어 채점하지 않는다. 위의 점검 결과를 먼저 본다.';
+      if (rule.skip) return { q, verdict: 'skip', raw, rule };
+      if (!raw) return { q, verdict: 'blank', raw, rule };
+      return { q, verdict: rule.accept.some(a => norm(rule.type, a) === norm(rule.type, raw.replace(/^["']|["']$/g, ''))) ? 'ok' : 'wrong', raw, rule };
+    });
+    if (mode === 'real' && ck.save) {
+      const patch = Object.assign({}, ck.save);
+      if (patch.device !== env.device && !patch.interfaces) patch.interfaces = null;
+      ck.saved = ck.save;
+      setEnv(patch);
+    }
+    // (3)은 (2)의 판정을 함께 읽는다. (2)를 다시 점검하면 (3)도 다시 판정한다.
+    Object.keys(D.CARDS).forEach(k => {
+      if (k !== key && D.CARDS[k].setup && state[k] && state[k][mode] && state[k][mode].checked && /ping/.test(k) && /ping/.test(key)) {
+        const s2 = state[k][mode];
+        const o2 = {}; o2[key] = ck;
+        const keep = s2.checked.saved;
+        s2.checked = D.CARDS[k].check({ answers: s2.answers, result: s2.result, env: envFor(mode), others: o2 });
+        if (keep) s2.checked.saved = keep;
+      }
+    });
+  }
+
+  function cardHTML(key) {
+    const c = D.CARDS[key], mode = modeOf(key);
+    if (c.setup) {
+      const g = setupGuideHTML(key, mode);
+      return cardHeadHTML(key, mode) + '<div class="lab-grid">' + g.html + '<div class="lab-work">' + setupWorkHTML(key, mode, g.n) + '</div></div>';
+    }
+    return cardHeadHTML(key, mode) +
       '<div class="lab-grid">' + guideHTML(key, mode) +
       '<div class="lab-work">' + pasteHTML(key, mode) + '<div class="after-paste">' + readingHTML(key, mode) + answersHTML(key, mode) + gradeHTML(key, mode) + afterHTML(key, mode) + '</div></div></div>';
   }
@@ -288,9 +447,10 @@
       }
       if (t.matches('.clear')) {
         const st = S(key, mode);
-        st.text = ''; st.result = null; st.graded = null; st.stale = false; st.after = null;
+        st.text = ''; st.result = null; st.graded = null; st.stale = false; st.after = null; st.checked = null;
         render(key); return;
       }
+      if (t.matches('.ssh-apply')) { applySsh(card); return; }
       if (t.matches('.to-example')) { modes[key] = 'example'; store(STORE.modes, modes); render(key); syncHeader(); return; }
       if (t.matches('.pick-apply')) {
         const sel = card.querySelector('.picks input:checked');
@@ -308,6 +468,14 @@
       const card = e.target.closest('.lab-card');
       if (!card) return;
       const key = card.dataset.key, mode = modeOf(key), st = S(key, mode);
+      if (D.CARDS[key].setup) {
+        // 0단계: 답이나 붙여넣기가 바뀌면 이전 판정을 지우고 다시 '점검하기'를 누르게 한다
+        if (e.target.matches('.paste')) st.text = e.target.value;
+        else if (e.target.dataset.q) st.answers[e.target.dataset.q] = e.target.type === 'checkbox' ? (e.target.checked ? 'yes' : '') : e.target.value;
+        else return;
+        if (st.checked) { st.checked = null; st.graded = null; st.result = null; card.querySelector('.after-paste').innerHTML = ''; }
+        return;
+      }
       if (e.target.matches('.paste')) {
         st.text = e.target.value;
         if (st.result) {
@@ -327,16 +495,37 @@
         }
       }
     });
-    root.addEventListener('change', e => { if (e.target.matches('.dev-input') && e.target.value.trim()) setEnv(deviceOnly(e.target.value.trim())); });
+    root.addEventListener('change', e => {
+      if (e.target.matches('.dev-input') && e.target.value.trim()) setEnv(deviceOnly(e.target.value.trim()));
+      if (e.target.matches('.ssh-user, .ssh-ip')) applySsh(e.target.closest('.lab-card'));
+    });
     root.addEventListener('submit', e => {
       const card = e.target.closest('.lab-card');
       if (!card) return;
       e.preventDefault();
       const key = card.dataset.key, mode = modeOf(key);
+      if (D.CARDS[key].setup) {
+        const ta = card.querySelector('.paste');
+        if (ta) S(key, mode).text = ta.value;
+        runSetupCheck(key, mode); refreshAll();
+        const r = document.querySelector('.lab-card[data-key="' + key + '"] .setup-result');
+        if (r) r.scrollIntoView({ block: 'nearest' });
+        return;
+      }
       grade(key, mode); refreshAll();
       const g = document.querySelector('.lab-card[data-key="' + key + '"] .grade');
       if (g) g.scrollIntoView({ block: 'nearest' });
     });
+  }
+
+  // 0-4: 계정 이름과 VM 주소를 내 환경 정보에 저장한다
+  function applySsh(card) {
+    const user = card.querySelector('.ssh-user').value.trim();
+    const ip = card.querySelector('.ssh-ip').value.trim().replace(/\/\d+$/, '');
+    if (ip && !/^(?:\d{1,3}\.){3}\d{1,3}$/.test(ip)) { alert('VM 주소는 점으로 나뉜 숫자 네 덩어리(IPv4)로 적는다.'); return; }
+    const patch = { user: user || null };
+    if (ip !== (env.ipv4 || '')) Object.assign(patch, { ipv4: ip || null, prefix: null });
+    setEnv(patch);
   }
 
   // 장치 이름만 직접 바꾸면 다른 장치의 IP가 남지 않도록 IP를 비운다. 1-2를 채점하면 다시 저장된다.
@@ -351,15 +540,15 @@
     const row = (k, v) => '<dt>' + k + '</dt><dd>' + (v ? '<code>' + esc(v) + '</code>' : '<span class="none">아직 모름</span>') + '</dd>';
     box.innerHTML = '<div class="env-title">내 환경 정보</div><dl>' +
       row('고른 장치', env.device) + row('VM IPv4', env.ipv4 ? env.ipv4 + (env.prefix != null ? '/' + env.prefix : '') : '') +
-      row('게이트웨이', env.gateway) + (env.interfaces && env.interfaces.length > 1 ? row('IPv4 장치', env.interfaces.join(', ')) : '') +
+      row('게이트웨이', env.gateway) + row('계정 이름', env.user) + (env.interfaces && env.interfaces.length > 1 ? row('IPv4 장치', env.interfaces.join(', ')) : '') +
       '</dl><p class="env-note">내 출력에서 확인한 값만 저장한다. 예시 값은 저장하지 않는다.</p><button type="button" class="minor" id="env-reset">내 환경 정보 초기화</button>';
     by('env-reset').onclick = () => {
-      if (confirm('저장한 내 환경 정보(장치 이름, VM IP, 게이트웨이)를 지운다. 계속할까?')) resetEnv();
+      if (confirm('저장한 내 환경 정보(장치 이름, VM IP, 게이트웨이, 계정 이름)를 지운다. 계속할까?')) resetEnv();
     };
   }
   function renderHero() {
     const vm = by('hero-vm');
-    if (vm) vm.innerHTML = env.ipv4 ? esc(env.device || '') + ' · ' + esc(env.ipv4) : '1-1에서 확인';
+    if (vm) vm.innerHTML = env.ipv4 ? esc(env.device || '') + ' · ' + esc(env.ipv4) : '0-2에서 확인';
   }
 
   // ---------- 페이지 · 메뉴 ----------
@@ -372,10 +561,11 @@
     D.PAGES.forEach(p => {
       if (p.group !== group) { group = p.group; html += '<span class="group">' + esc(group) + '</span>'; }
       const c = D.CARDS[p.cards[0]];
-      html += '<a class="navlink lab-link" href="#' + p.id + '"><em>' + esc(c.no) + '</em>' + esc(p.menu) + '</a>';
+      html += '<a class="navlink lab-link" href="#' + p.id + '"><em>' + esc(p.no || c.no) + '</em>' + esc(p.menu) + '</a>';
     });
     menu.innerHTML = html;
-    pages.innerHTML = D.PAGES.map(p => '<section class="lab-page" id="' + p.id + '" hidden><div class="heading"><span class="section-no">' + esc(D.CARDS[p.cards[0]].no.split('-')[0]) + '단계</span><h2>' + esc(p.title) + '</h2></div><p class="intro">' + esc(p.intro) + '</p>' +
+    const introHTML = p => (p.introTitle ? '<h3 class="intro-title">' + esc(p.introTitle) + '</h3>' : '') + [].concat(p.intro || []).map(x => '<p class="intro">' + esc(x) + '</p>').join('');
+    pages.innerHTML = D.PAGES.map(p => '<section class="lab-page" id="' + p.id + '" hidden><div class="heading"><span class="section-no">' + esc(D.CARDS[p.cards[0]].no.split('-')[0]) + '단계</span><h2>' + esc(p.title) + '</h2></div>' + introHTML(p) +
       p.cards.map(k => '<article class="card lab-card" data-key="' + k + '">' + cardHTML(k) + '</article>').join('') + '</section>').join('');
     bindCards(pages);
     menu.addEventListener('click', e => { const a = e.target.closest('a'); if (a && a.hash === location.hash) route(location.hash, true); });

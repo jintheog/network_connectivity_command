@@ -59,3 +59,16 @@
 .next-link{font-weight:bold;color:#19664e}
 @media(max-width:1000px){.lab-grid{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:800px){.env-panel,.legacy-note{display:none}#lab-menu{display:flex;overflow:auto;gap:4px}}
+/* ===== 0단계 · 실습 환경 준비 (lab.js setup 카드) ===== */
+.intro-title{margin:18px 0 4px;font-size:17px;color:#17463a}
+.setup-steps{padding-left:20px;margin:4px 0}.setup-steps li{margin:5px 0}
+.read-lines{margin:4px 0}.read-lines dt{margin-top:6px}.read-lines dt code{overflow-wrap:anywhere}.read-lines dd{margin:2px 0 0 14px;font-size:14px}
+.fixes{padding-left:18px;margin:4px 0}.fixes li{margin:5px 0;font-size:14px}
+.q-check label{display:flex;align-items:flex-start;gap:8px;font-weight:normal}.q-check input{width:auto;margin:4px 0 0}
+details.optional{border:1px dashed #b8c9c4;border-radius:8px;padding:8px 12px;margin:12px 0;background:#fafcfb}
+details.optional summary{cursor:pointer;font-weight:600;color:#17463a;display:flex;align-items:center;gap:8px}
+details.optional summary b{display:inline-grid;place-items:center;min-width:22px;height:22px;border-radius:50%;background:#e0f3eb;color:#145c44;font:700 12px Consolas,monospace}
+.ready-box{padding:10px 14px;border-radius:6px;border-left:4px solid #358466;background:#eff7f3}.ready-box.problem{border-color:#b3261e;background:#fdecea}.ready-box.unknown{border-color:#c48a2a;background:#fff8ea}
+.ready-box .chip{font-size:15px;padding:2px 12px}
+.fix-box{margin:8px 0;padding:8px 12px;background:#fff;border:1px solid #e3d2b0;border-radius:6px}.fix-box p{margin:4px 0 0}
+.connect code{background:#eef4f2;padding:1px 6px;border-radius:4px}
