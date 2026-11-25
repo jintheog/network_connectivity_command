@@ -581,6 +581,14 @@
       const r2 = A.analyze('[jin@localhost ~]$ ip route\nRTNETLINK answers: Operation not permitted', { expect: 'ip-route' });
       t.eq(r2.kind, 'ip-route', 'ip route의 오류는 그대로 ip route');
     });
+    test('[직접 만든 예시] traceroute 비교용: 중간 홉이 * * *여도 마지막에 목적지가 나오면 목적지 응답 확인', t => {
+      const r = A.analyze('traceroute to 203.0.113.10 (203.0.113.10), 30 hops max, 60 byte packets\n 1  172.16.89.2  0.512 ms  0.301 ms  0.288 ms\n 2  * * *\n 3  198.51.100.1  8.104 ms  7.992 ms  8.051 ms\n 4  203.0.113.10  9.870 ms  9.802 ms  9.911 ms', { expect: 'traceroute' });
+      t.eq([r.status, r.outcome, r.values.destinationHop], ['ok', 'reached', 4]);
+      const g = A.analyze(L('traceroute -n 172.16.89.2'), { expect: 'traceroute' });
+      t.eq([g.status, g.outcome], ['unknown', 'no-response'], '실제: 게이트웨이 30홉 모두 *');
+      const o = A.analyze(L('traceroute -n -w 2 8.8.8.8'), { expect: 'traceroute' });
+      t.eq([o.status, o.outcome, o.values.lastResponder], ['ok', 'intermediate-only', '172.16.89.2'], '실제: 8.8.8.8은 1홉만');
+    });
 
     const passed = results.filter(r => r.ok).length;
     return { results, passed, failed: results.length - passed, total: results.length };

@@ -1142,6 +1142,204 @@
     };
   };
 
+  // ----- 1-9 Test-NetConnection (Windows) -----
+  const SAMPLE_TNC_OK = 'ComputerName     : 172.16.89.128\nRemoteAddress    : 172.16.89.128\nRemotePort       : 22\nInterfaceAlias   : VMware Network Adapter VMnet8\nSourceAddress    : 172.16.89.1\nTcpTestSucceeded : True';
+  const SAMPLE_TNC_FAIL = 'TCP connect to (172.16.89.128 : 443) failed\nComputerName           : 172.16.89.128\nRemoteAddress          : 172.16.89.128\nRemotePort             : 443\nInterfaceAlias         : VMware Network Adapter VMnet8\nSourceAddress          : 172.16.89.1\nPingSucceeded          : True\nPingReplyDetails (RTT) : 1 ms\nTcpTestSucceeded       : False';
+  const TNC_LOGIN = ['말할 수 없다 (TCP 연결이 되는지만 확인했다)', '말할 수 있다'];
+  CARDS['tnc'] = {
+    no: '1-9',
+    title: 'Test-NetConnection — Windows PC에서 VM의 TCP 포트로 연결해 보기',
+    question: 'Windows PC에서 VM의 22번(SSH) 포트와 443번(HTTPS) 포트로 TCP 연결이 되는가? 연결이 된다는 것은 어디까지를 뜻하는가?',
+    place: 'windows',
+    commands: env => [
+      { label: 'VM의 22번(SSH) 포트', cmd: 'Test-NetConnection ' + val(env.ipv4, 'VM주소') + ' -Port 22' },
+      { label: 'VM의 443번(HTTPS) 포트', cmd: 'Test-NetConnection ' + val(env.ipv4, 'VM주소') + ' -Port 443' },
+    ],
+    needs: env => (env.ipv4 ? [] : ['VM주소']),
+    lead: '이번 명령은 VM 안이 아니라 Windows PC에서 실행한다. SSH로 접속한 창이라면 <code>exit</code>로 접속을 끝내거나, PowerShell 창을 하나 더 연다. 프롬프트가 <code>PS C:\\...&gt;</code>인지 확인하고 아래 두 명령을 하나씩 실행한다.',
+    parts: [
+      ['Test-NetConnection', 'Windows PowerShell에 들어 있는 연결 진단 명령이다. 대상 컴퓨터로 연결해 보고 결과를 표로 보여준다. VM 안(리눅스)에는 없는 명령이다.'],
+      ['VM 주소', '연결해 볼 대상 컴퓨터의 주소다. 내 VM의 IPv4 주소를 넣는다.'],
+      ['-Port 22', '연결해 볼 대상 컴퓨터의 TCP 포트 번호다. 이 옵션을 주면 그 포트로 TCP 연결을 시도한다. 이 옵션이 없으면 ping만 해 본다.'],
+    ],
+    values: env => env.ipv4
+      ? '<code>' + env.ipv4 + '</code>는 0-2에서 저장한 내 VM의 IP다. 자동으로 채웠다.'
+      : '<code>VM주소</code>는 0-2나 1-1에서 확인한 내 VM의 IPv4 주소로 바꾼다. 저장하면 자동으로 채워진다.',
+    ends: '결과 표가 나오고 <code>PS C:\\...&gt;</code> 프롬프트가 다시 나타나면 끝난 것이다. 연결이 되면 몇 초 안에 끝난다. 연결에 실패하면 응답을 기다리느라 더 오래 걸리고, 그동안 창 위쪽에 진행 표시가 잠깐 보일 수 있다.',
+    copy: {
+      from: '<code>TCP connect to (...) failed</code> 같은 경고 줄이 있으면 그 줄부터, 없으면 <code>ComputerName</code> 줄부터. 한국어 Windows에서는 경고 줄 앞에 <code>경고:</code>가 붙을 수 있다.',
+      to: '<code>TcpTestSucceeded</code> 줄.',
+      extra: '명령 하나의 출력만 붙여 넣는다. 위아래의 빈 줄은 함께 복사되어도 괜찮다.',
+      fail: '<code>... 용어가 ... 인식되지 않습니다</code>나 <code>command not found</code>가 나오면 그 줄을 복사한다. 실행 위치가 틀렸을 수 있다.',
+    },
+    pasteLabel: '내 PowerShell 출력',
+    expect: 'tnc',
+    gradeOn: ['fail'],
+    example: {
+      shown: [{ label: '(1) <code>Test-NetConnection 172.16.89.128 -Port 22</code>', text: SAMPLE_TNC_OK }, { label: '(2) <code>Test-NetConnection 172.16.89.128 -Port 443</code>', text: SAMPLE_TNC_FAIL }],
+      output: 'PS C:\\Users\\jin> Test-NetConnection 192.168.10.130 -Port 22\n' + toExample(SAMPLE_TNC_OK),
+      note: '아래 값(192.168.10.130, 192.168.10.1)은 예시다. 내 VM과 Windows PC의 값과 다르다.',
+    },
+    reading: [
+      '<code>ComputerName</code>과 <code>RemoteAddress</code>는 연결해 본 대상, <code>RemotePort</code>는 연결해 본 포트다.',
+      '<code>InterfaceAlias : VMware Network Adapter VMnet8</code>은 Windows PC가 이 연결에 쓴 네트워크 장치다. VMware가 Windows에 만들어 준 장치다. <code>SourceAddress : 172.16.89.1</code>은 연결을 보낸 Windows 쪽 주소다. 1-6에서 ping을 보낸 Windows PC 주소와 같다.',
+      '<code>TcpTestSucceeded : True</code>: Windows PC에서 VM의 22번 포트로 TCP 연결에 성공했다. 1-8의 nc는 VM 안에서 자기 자신에게 연결해 본 것이고, 이것은 Windows에서 VM까지 연결해 본 것이다. 다만 TCP 연결 성공일 뿐 SSH 로그인 성공이 아니다. 로그인은 0-4처럼 ssh로 계정과 비밀번호를 넣어야 확인된다.',
+      '<code>TCP connect to (172.16.89.128 : 443) failed</code>와 <code>TcpTestSucceeded : False</code>: 443번 포트로는 연결하지 못했다. 거절됐는지, 응답이 없었는지는 이 결과만으로 구분되지 않는다. 연결에 실패하면 ping도 해 보고 그 결과를 <code>PingSucceeded</code>로 함께 보여준다. <code>PingSucceeded : True</code>이므로 VM까지는 닿는다. 1-7의 <code>ss -lnt</code>에 443번 LISTEN 줄이 없던 것과 맞는다.',
+    ],
+    questions: [
+      { key: 'tnc.tcp', label: 'TcpTestSucceeded 값은 무엇인가?', choices: ['True', 'False'] },
+      { key: 'tnc.source', label: '연결을 보낸 Windows 쪽 주소(SourceAddress)는 무엇인가?', placeholder: 'IPv4 주소' },
+      { key: 'tnc.login', label: '이 결과만으로 SSH 로그인까지 성공한다고 말할 수 있는가?', choices: TNC_LOGIN },
+    ],
+    fixes: [
+      ['tcpfail', '<code>TcpTestSucceeded : False</code>: Windows PC에서 그 포트로 TCP 연결을 맺지 못했다. 거절됐는지 응답이 없었는지는 이 결과만으로 구분되지 않는다. VM 안에서 1-7의 <code>ss -lnt</code>로 그 포트를 기다리는지 확인한다. 443처럼 기다리는 프로그램이 없는 포트라면 실패가 정상이다.'],
+      ['pingfail', '<code>TcpTestSucceeded : False</code>와 <code>PingSucceeded : False</code>: TCP 연결도 ping 응답도 없었다. 주소가 맞는지, VM이 켜져 있는지 확인한다. ping만 실패한 것으로는 장애라고 단정하지 않는다.'],
+      ['noport', '<code>RemotePort</code>와 <code>TcpTestSucceeded</code> 줄 없이 <code>PingSucceeded</code>만 있다: <code>-Port</code> 없이 실행해 ping만 했다. <code>-Port 22</code>를 붙여 다시 실행한다.'],
+      ['wrongplace', '<code>Test-NetConnection: command not found</code>: Test-NetConnection은 Windows PowerShell 명령이다. VM 안(SSH로 접속한 창)에서 실행했다. <code>exit</code>로 접속을 끝내고 <code>PS C:\\...&gt;</code> 프롬프트에서 다시 실행한다.'],
+    ],
+    fixFor: res => (res.status === 'notfound' ? 'wrongplace'
+      : res.outcome === 'tcp-fail' ? (res.values.pingSucceeded === false ? 'pingfail' : 'tcpfail')
+      : res.outcome === 'ping-ok' || res.outcome === 'ping-fail' ? 'noport' : null),
+    readNote: (res, env) => (res.values && res.values.remoteAddress && res.values.remoteAddress === env.ipv4
+      ? 'Windows PC에서 내 VM(' + env.ipv4 + ')으로 검사한 결과다. 1-8의 nc(VM 내부에서 실행한 검사)와 달리 Windows에서 VM까지의 TCP 연결을 확인했다.' : null),
+    next: 'traceroute',
+  };
+  RULES['tnc.tcp'] = res => {
+    const v = res.values;
+    if (v.tcpTestSucceeded == null) return { skip: 'TcpTestSucceeded 줄이 없다. -Port를 붙여 실행했는지 확인한다.' };
+    const show = v.tcpTestSucceeded ? 'True' : 'False';
+    return {
+      type: 'choice', accept: [show], show, lines: (res.evidence.tcpTestSucceeded || []).concat(res.evidence.warnings || []),
+      explain: v.tcpTestSucceeded ? 'True는 Windows PC에서 ' + v.remoteAddress + '의 TCP ' + v.remotePort + '번으로 연결에 성공했다는 뜻이다.'
+        : 'False는 TCP ' + v.remotePort + '번으로 연결하지 못했다는 뜻이다. 위의 TCP connect to ... failed 줄도 같은 내용이다.',
+    };
+  };
+  RULES['tnc.source'] = res => {
+    const s = res.values.sourceAddress;
+    if (!s) return { skip: 'SourceAddress 줄이 없어 채점하지 않는다.' };
+    return {
+      type: 'ip', accept: [s], show: s, lines: res.evidence.sourceAddress || [],
+      explain: 'SourceAddress는 이 연결을 보낸 Windows 쪽 주소다. InterfaceAlias(' + (res.values.interfaceAlias || '') + ') 장치의 주소다. VMware NAT에서는 보통 VM 네트워크의 .1이다.',
+    };
+  };
+  RULES['tnc.login'] = res => ({
+    type: 'choice', accept: [TNC_LOGIN[0]], show: TNC_LOGIN[0], lines: res.evidence.tcpTestSucceeded || [],
+    explain: 'Test-NetConnection은 TCP 연결이 맺어지는지만 본다. TcpTestSucceeded : True여도 계정이나 비밀번호가 맞는지, SSH 로그인이 되는지는 확인하지 않았다. 로그인은 0-4처럼 ssh로 접속해 봐야 안다.',
+  });
+
+  // ----- 1-10 traceroute -n -----
+  const starHops = (from, to) => { const a = []; for (let i = from; i <= to; i++) a.push((i < 10 ? ' ' : '') + i + '  * * *'); return a.join('\n'); };
+  const SAMPLE_TR_GW = 'traceroute to 172.16.89.2 (172.16.89.2), 30 hops max, 60 byte packets\n' + starHops(1, 30);
+  const SAMPLE_TR_OUT = 'traceroute to 8.8.8.8 (8.8.8.8), 30 hops max, 60 byte packets\n 1  172.16.89.2  0.581 ms  0.236 ms  0.086 ms\n' + starHops(2, 30);
+  // [직접 만든 예시] 비교용: 목적지까지 응답이 돌아온 경우 (문서용 주소 203.0.113.0/24, 198.51.100.0/24 사용)
+  const MADE_TR_REACHED = 'traceroute to 203.0.113.10 (203.0.113.10), 30 hops max, 60 byte packets\n 1  172.16.89.2  0.512 ms  0.301 ms  0.288 ms\n 2  * * *\n 3  198.51.100.1  8.104 ms  7.992 ms  8.051 ms\n 4  203.0.113.10  9.870 ms  9.802 ms  9.911 ms';
+  const TR_SEEN = ['목적지 응답 확인 (마지막에 목적지 주소가 나왔다)', '중간 홉만 응답 (목적지는 나오지 않았다)', '응답한 홉이 하나도 없다 (모두 *)'];
+  const TR_JUDGE = ['목적지가 응답해 닿는 것을 확인했다', '주어진 출력만으로 판정하기 어렵다'];
+  CARDS['traceroute'] = {
+    no: '1-10',
+    title: 'traceroute -n — 홉 번호, 응답한 IP, 왕복 시간, * 읽기',
+    question: '목적지까지 가는 길에 어떤 장비가 응답하는가? 응답이 * 로만 나오면 무엇을 말할 수 있고 무엇을 말할 수 없는가?',
+    place: 'ssh-vm',
+    commands: env => [
+      { label: '같은 네트워크의 기본 게이트웨이', cmd: 'traceroute -n ' + val(env.gateway, '게이트웨이주소') },
+      { label: '인터넷 주소 (구글 공개 DNS 서버)', cmd: 'traceroute -n -w 2 8.8.8.8' },
+    ],
+    needs: env => (env.gateway ? [] : ['게이트웨이주소']),
+    lead: '1-1과 같은 창(SSH로 VM에 접속한 PowerShell 창)에서 아래 두 명령을 하나씩 실행한다. 끝날 때까지 시간이 걸릴 수 있다.',
+    parts: [
+      ['traceroute', '목적지까지 패킷이 거쳐 가는 장비들을 차례로 알아보는 명령이다. 패킷에는 TTL(수명) 값이 있어서 장비를 하나 지날 때마다 1씩 줄고, 0이 되면 그 장비가 "시간 초과" 알림을 돌려보낸다. traceroute는 TTL을 1, 2, 3...으로 늘려 가며 보내서, 알림을 돌려준 장비를 한 줄씩 보여준다. 이 장비 하나하나를 홉(hop)이라고 한다. 0-3에서 설치한 traceroute 패키지에 들어 있다.'],
+      ['-n', '응답한 장비의 주소를 이름으로 바꾸지 않고 IP 주소 그대로 보여준다. 이름을 찾느라 기다리지 않아 더 빨리 끝난다.'],
+      ['-w 2', '확인 패킷 하나의 응답을 최대 2초까지 기다린다. 응답이 없는 홉이 많을 때 덜 기다리게 하려고 (2)에 붙였다.'],
+      ['목적지 IP', '길을 알아볼 목적지다. (1)은 1-3에서 찾은 기본 게이트웨이, (2)는 8.8.8.8이다.'],
+    ],
+    values: env => env.gateway
+      ? '(1)의 <code>' + env.gateway + '</code>는 1-3에서 저장한 기본 게이트웨이다. 자동으로 채웠다.'
+      : '(1)의 <code>게이트웨이주소</code>는 1-3의 <code>ip route</code>에서 찾은 via 뒤 주소로 바꾼다. 1-3을 채점하면 자동으로 채워진다.',
+    ends: '목적지가 응답하거나, 첫 줄의 <code>30 hops max</code>대로 30번 홉까지 가면 끝난다. <code>* * *</code> 줄이 많으면 응답을 기다리느라 끝날 때까지 시간이 꽤 걸린다. 중간에 Ctrl + C로 멈추면 출력이 끝까지 나오지 않아 앱이 \'일부 누락 의심\'으로 표시한다.',
+    copy: {
+      from: '<code>traceroute to</code>로 시작하는 첫 줄.',
+      to: '마지막 홉 줄. 목적지 주소가 나온 줄이나, 30으로 시작하는 줄이다. 작성자의 VM에서는 두 명령 모두 <code>30  * * *</code> 줄이 마지막이었다.',
+      extra: '명령 하나의 출력만 붙여 넣는다. 줄이 많아 화면 위로 넘어갔다면 창을 위로 올려 첫 줄부터 복사한다.',
+      fail: '<code>traceroute: command not found</code>가 나오면 그 줄을 복사한다.',
+    },
+    pasteLabel: '내 Linux 출력',
+    expect: 'traceroute',
+    gradeOn: ['unknown'],
+    example: {
+      shown: [
+        { label: '(1) <code>traceroute -n 172.16.89.2</code> — 게이트웨이', text: SAMPLE_TR_GW },
+        { label: '(2) <code>traceroute -n -w 2 8.8.8.8</code>', text: SAMPLE_TR_OUT },
+        { label: '비교용 — 목적지까지 응답이 돌아온 경우', text: MADE_TR_REACHED, bar: '직접 만든 예시 · 실제 출력이 아니다' },
+      ],
+      shownNote: '(1)과 (2)는 작성자의 VM에서 실제로 나온 출력이다. 마지막 비교용 출력은 직접 만든 예시다.',
+      output: '[jin@localhost ~]$ traceroute -n -w 2 8.8.8.8\n' + toExample(SAMPLE_TR_OUT),
+      note: '아래 값(192.168.10.2)은 예시다. 내 VM의 값과 다르다.',
+    },
+    reading: [
+      '첫 줄 <code>traceroute to 8.8.8.8 (8.8.8.8), 30 hops max, 60 byte packets</code>: 목적지와, 최대 30홉까지 알아본다는 것, 60바이트 크기의 확인 패킷을 보낸다는 것이다.',
+      '그 아래 한 줄이 홉 하나다. 맨 앞 숫자가 홉 번호(몇 번째 장비인지)이고, 그 뒤가 응답한 장비의 IP다. 한 홉에 확인 패킷을 세 번 보내므로 왕복 시간(ms)이 세 개 나온다.',
+      '<code>* * *</code>: 세 번 모두 정해진 시간 안에 응답이 없었다는 뜻이다. 그 자리에 장비가 없다는 뜻이 아니라, 응답을 돌려주지 않았다는 뜻이다.',
+      '(1) 게이트웨이 172.16.89.2는 1-6에서 ping에 응답했는데, traceroute는 30홉 모두 <code>* * *</code>였다. 같은 서브넷에 있으므로 중간 장비 없이 1번 홉에 바로 나와야 할 목적지다. VMware NAT 장치가 traceroute의 확인 패킷에 응답을 돌려주지 않는 것으로 보인다. 이 출력만으로는 판정하기 어렵다.',
+      '(2) 8.8.8.8은 1번 홉의 게이트웨이(172.16.89.2)만 응답하고 나머지는 <code>*</code>였다. VMware NAT를 지난 뒤의 장비가 보낸 알림이 VM까지 전달되지 않는 것으로 보인다. 1-6에서 8.8.8.8은 ping에 응답했으므로, 이 출력을 근거로 목적지에 닿지 못했다고 말할 수 없다. "주어진 출력만으로 판정하기 어려움"으로 둔다.',
+      '비교용 예시처럼 마지막 줄에 목적지 주소가 나오면 목적지가 응답한 것이다. 중간의 <code>2  * * *</code>는 그 장비가 응답만 하지 않은 것이고, 길이 끊긴 것이 아니다.',
+    ],
+    questions: [
+      { key: 'tr.target', label: '목적지 IP는 무엇인가? (traceroute to 줄의 괄호 안)', placeholder: 'IPv4 주소' },
+      { key: 'tr.hop1', label: '1번 홉에서 응답한 주소는 무엇인가? 1번 홉이 * * *이면 "*"라고 적는다.', placeholder: 'IPv4 주소 또는 *' },
+      { key: 'tr.seen', label: '이 출력에서 보이는 것은 무엇인가?', choices: TR_SEEN },
+      { key: 'tr.judge', label: '이 출력만으로 목적지까지 닿는지 판정할 수 있는가?', choices: TR_JUDGE },
+    ],
+    fixes: [
+      ['allstar', '모든 홉이 <code>* * *</code>다: 응답한 장비가 하나도 없다. VMware NAT 환경에서는 게이트웨이처럼 ping에 응답하는 주소도 이렇게 나올 수 있다. 장애라고 단정하지 않고 "주어진 출력만으로 판정하기 어려움"으로 둔다. 1-6의 ping이나 1-8의 nc처럼 다른 방법으로 확인한다.'],
+      ['midonly', '중간 홉만 응답하고 목적지는 나오지 않았다: VMware NAT 환경에서는 게이트웨이 너머의 응답이 VM에 전달되지 않아 흔히 이렇게 나온다. 목적지에 닿지 못했다고 단정하지 않는다.'],
+      ['reached', '마지막에 목적지 주소가 나왔다: 목적지가 응답했다. 중간에 <code>* * *</code>인 홉이 있어도 그 장비가 응답만 하지 않은 것이다.'],
+      ['cut', '30번 홉이나 목적지가 나오기 전에 출력이 끝났다: 복사가 끊겼거나 Ctrl + C로 멈췄다. 끝까지 기다린 뒤 첫 줄부터 다시 복사한다.'],
+      ['notfound', '<code>traceroute: command not found</code>: 이 명령을 실행할 도구가 없다. 0-3의 <code>sudo dnf install -y traceroute</code>로 설치하거나, 이 카드를 \'예시로 연습\'으로 진행한다.'],
+    ],
+    fixFor: res => (res.status === 'notfound' ? 'notfound'
+      : res.status === 'partial' && /홉에서 출력이 끝났다/.test(res.message) ? 'cut'
+      : { 'no-response': 'allstar', 'intermediate-only': 'midonly', reached: 'reached' }[res.outcome] || null),
+  };
+  RULES['tr.target'] = res => {
+    const t = res.values.targetIp;
+    if (!t) return { skip: 'traceroute to 줄이 없어 채점하지 않는다.' };
+    return { type: 'ip', accept: [t], show: t, lines: res.evidence.target || [], explain: '첫 줄 traceroute to 뒤 괄호 안이 목적지 IP다.' };
+  };
+  RULES['tr.hop1'] = res => {
+    const h = res.values.hops.find(x => x.n === 1);
+    if (!h) return { skip: '1번 홉 줄이 없어 채점하지 않는다.' };
+    const r = h.responders;
+    return {
+      type: 'ip', accept: r.length ? r : ['*', '* * *', '없음'], show: r.length ? r.join(' 또는 ') : '*',
+      lines: [h.line],
+      explain: r.length ? '1로 시작하는 줄의 IP가 1번 홉에서 응답한 장비다. 보통 기본 게이트웨이다. 뒤의 ms 값 세 개는 세 번 보낸 확인 패킷의 왕복 시간이다.'
+        : '1번 홉이 * * *다. 세 번 모두 응답을 받지 못했다. 그 자리에 장비가 없다는 뜻은 아니다.',
+    };
+  };
+  RULES['tr.seen'] = res => {
+    const o = res.outcome;
+    const show = o === 'reached' ? TR_SEEN[0] : o === 'intermediate-only' ? TR_SEEN[1] : o === 'no-response' ? TR_SEEN[2] : null;
+    if (!show) return { skip: '출력이 끝까지 있지 않아 채점하지 않는다.' };
+    const v = res.values;
+    return {
+      type: 'choice', accept: [show], show,
+      lines: o === 'reached' ? res.evidence.destination : o === 'intermediate-only' ? v.respondedHops.map(h => h.line) : [v.hops[0].line, v.hops[v.hops.length - 1].line],
+      explain: o === 'reached' ? v.destinationHop + '번 홉에 목적지 ' + v.targetIp + '가 나왔다.'
+        : o === 'intermediate-only' ? '응답한 홉은 ' + v.respondedHops.map(h => h.n + '번(' + h.ips.join(', ') + ')').join(', ') + '뿐이고 목적지 ' + v.targetIp + '는 나오지 않았다.'
+        : '1번부터 ' + v.hops.length + '번까지 모든 홉이 * * *다. 응답한 장비가 없다.',
+    };
+  };
+  RULES['tr.judge'] = res => {
+    const o = res.outcome;
+    if (!o || res.status === 'partial') return { skip: '출력이 끝까지 있지 않아 채점하지 않는다.' };
+    const show = o === 'reached' ? TR_JUDGE[0] : TR_JUDGE[1];
+    return {
+      type: 'choice', accept: [show], show, lines: res.evidence.destination || res.evidence.target || [],
+      explain: o === 'reached' ? '목적지 주소가 홉 줄에 나왔으므로 목적지까지 닿는 것을 확인했다.'
+        : '목적지가 응답하지 않았지만, VMware NAT 환경에서는 닿는 목적지도 이렇게 나올 수 있다. 이 출력만으로는 닿는지 못 닿는지 판정하기 어렵다. ping(1-6)이나 nc(1-8)로 함께 확인한다.',
+    };
+  };
+
   // ----- 0단계 확인 질문의 채점 규칙 (붙여 넣은 출력이 있을 때만 쓴다. fixed는 출력 없이도 채점) -----
   const normName = s => String(s || '').replace(/["']/g, '').replace(/\s+/g, ' ').trim();
   RULES['os.pretty'] = res => ({
@@ -1237,6 +1435,12 @@
     { id: 'lab-nc', menu: 'nc -vz -w 3', cards: ['nc'], group: '1단계 · 명령 익히기',
       title: '지정한 TCP 포트로 연결해 보기',
       intro: 'Linux 클라이언트에서 TCP 포트로 연결을 시도해 연결 성공, 거절 응답, 응답 없음을 구분한다. VM 안에서 자기 주소를 검사한 결과는 VM 내부에서 실행한 검사로 본다.' },
+    { id: 'lab-tnc', menu: 'Test-NetConnection', cards: ['tnc'], group: '1단계 · 명령 익히기',
+      title: 'Windows PC에서 VM의 TCP 포트로 연결해 보기',
+      intro: 'Windows PC에서 VM까지 TCP 연결이 되는지 PowerShell로 검사한다. TCP 연결 성공과 SSH 로그인 성공을 구분한다.' },
+    { id: 'lab-traceroute', menu: 'traceroute -n', cards: ['traceroute'], group: '1단계 · 명령 익히기',
+      title: '홉 번호, 응답한 IP, 왕복 시간, * 읽기',
+      intro: '목적지까지 거쳐 가는 장비들을 알아본다. VMware NAT 환경에서는 * 가 많이 나올 수 있으므로, 목적지 응답 확인 · 중간 홉만 응답 · 판정하기 어려움을 구분한다.' },
   ]);
 
   root.LabData = { PLACES, CARDS, RULES, PAGES, EXAMPLE_ENV };
