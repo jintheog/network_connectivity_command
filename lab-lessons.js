@@ -768,6 +768,194 @@
     };
   };
 
+  // ----- 1-5 nslookup -----
+  const SAMPLE_NS_OK = 'Server:\t\t172.16.89.2\nAddress:\t172.16.89.2#53\n\nNon-authoritative answer:\nName:\tgoogle.com\nAddress: 142.250.198.142\nName:\tgoogle.com\nAddress: 2404:6800:4005:81b::200e';
+  const SAMPLE_NS_NX = 'Server:\t\t172.16.89.2\nAddress:\t172.16.89.2#53\n\n** server can\'t find no-such-name.invalid: NXDOMAIN';
+  const SAMPLE_NS_TO = ';; communications error to 192.0.2.1#53: timed out\n;; communications error to 192.0.2.1#53: timed out\n;; communications error to 192.0.2.1#53: timed out\n;; no servers could be reached';
+  const NS_RESULTS = ['주소를 받았다', '이름이 없다는 답을 받았다 (NXDOMAIN)', '답을 받지 못했다 (응답 없음)'];
+  CARDS['nslookup'] = {
+    no: '1-5',
+    title: 'nslookup — 질의한 DNS 서버와 조회 결과 구분하기',
+    question: '이 VM은 어느 DNS 서버에 이름을 물어보는가? 그 서버는 어떤 주소를 알려 주는가? "그런 이름은 없다"는 답과 "답이 없다"는 어떻게 다른가?',
+    place: 'ssh-vm',
+    commands: () => [
+      { label: '있는 이름 조회', cmd: 'nslookup google.com' },
+      { label: '없는 이름 조회', cmd: 'nslookup no-such-name.invalid' },
+      { label: '응답하지 않는 주소를 DNS 서버로 지정해 조회', cmd: 'nslookup google.com 192.0.2.1' },
+    ],
+    lead: '1-1과 같은 창(SSH로 VM에 접속한 PowerShell 창)에서 아래 세 명령을 하나씩 실행한다. 하나를 붙여 넣어 읽고 채점한 뒤 다음 명령으로 넘어간다.',
+    parts: [
+      ['nslookup', 'DNS 서버에 이름을 물어보는 명령이다. DNS(Domain Name System)는 google.com 같은 이름을 IP 주소로 바꿔 주는 체계이고, DNS 서버는 그 질문에 답하는 컴퓨터다. 0-3에서 설치한 bind-utils 패키지에 들어 있다.'],
+      ['google.com', '주소를 알고 싶은 이름이다. 이름 하나만 쓰면 이 VM에 설정된 기본 DNS 서버에 물어본다.'],
+      ['no-such-name.invalid', '일부러 없는 이름을 넣었다. <code>.invalid</code>는 어떤 실제 이름에도 쓰지 않도록 따로 떼어 둔 이름이라, 이 이름은 어디에도 없다.'],
+      ['192.0.2.1', '이름 뒤에 주소를 하나 더 쓰면 기본 DNS 서버 대신 그 주소에 물어본다. 192.0.2.1은 문서와 예제에 쓰도록 따로 떼어 둔 주소라 실제로 답하는 DNS 서버가 없다. 답을 받지 못하는 경우를 보려고 넣었다.'],
+    ],
+    values: () => '바꿀 값이 없다. 세 명령을 그대로 입력한다.',
+    ends: '(1)과 (2)는 결과를 보여주고 바로 끝난다. (3)은 답을 기다리며 몇 번 다시 물어본 뒤 <code>;; no servers could be reached</code> 줄을 출력하고 끝난다. 그동안 몇 초 넘게 아무것도 나오지 않을 수 있다. 프롬프트가 다시 나타나면 끝난 것이다.',
+    copy: {
+      from: '<code>Server:</code>로 시작하는 줄. (3)처럼 <code>;;</code>로 시작하는 줄부터 나오면 첫 <code>;;</code> 줄.',
+      to: '(1)은 마지막 <code>Address:</code> 줄. (2)는 <code>** server can\'t find ...</code> 줄. (3)은 <code>;; no servers could be reached</code> 줄.',
+      extra: '명령 하나의 출력만 붙여 넣는다. 명령 줄까지 함께 복사하면 무엇을 물었는지 앱이 더 확실히 안다.',
+      fail: '<code>nslookup: command not found</code>가 나오면 그 줄을 복사한다. 도구가 없다는 뜻이다.',
+    },
+    pasteLabel: '내 Linux 출력',
+    expect: 'nslookup',
+    gradeOn: ['fail'],
+    example: {
+      shown: [{ label: '(1) <code>nslookup google.com</code>', text: SAMPLE_NS_OK }, { label: '(2) <code>nslookup no-such-name.invalid</code>', text: SAMPLE_NS_NX }, { label: '(3) <code>nslookup google.com 192.0.2.1</code>', text: SAMPLE_NS_TO }],
+      output: '[jin@localhost ~]$ nslookup google.com\n' + toExample(SAMPLE_NS_OK),
+      note: '아래 DNS 서버 주소(192.168.10.2)는 예시다. 조회된 google.com의 주소도 위치와 시간에 따라 달라진다.',
+    },
+    reading: [
+      '주소가 두 군데 나온다. 위쪽 <code>Server:</code>와 <code>Address: 172.16.89.2#53</code>은 <b>질의한 DNS 서버</b>, 곧 물어본 쪽의 주소다. <code>#53</code>은 DNS가 쓰는 포트 번호 53이다. 작성자의 VM에서는 기본 게이트웨이와 같은 172.16.89.2다. VMware NAT 장치가 DNS 질문도 받아 대신 전달하기 때문이다.',
+      '<code>Non-authoritative answer:</code> 아래의 <code>Name:</code>과 <code>Address:</code>는 <b>조회 결과</b>, 곧 google.com의 주소다. "Non-authoritative"는 이 답을 준 서버가 google.com을 직접 관리하는 서버가 아니라, 대신 찾아서 알려 준 답이라는 뜻이다.',
+      '조회 결과에 점 네 덩어리(142.250.198.142)는 IPv4 주소, 콜론이 섞인 값(2404:6800:...)은 IPv6 주소다. 한 이름에 주소가 여러 개 붙어 있을 수 있다.',
+      '<code>** server can\'t find no-such-name.invalid: NXDOMAIN</code>: DNS 서버가 <b>답을 했고</b>, 그 답이 "그런 이름은 없다(NXDOMAIN, Non-Existent Domain)"였다. 위쪽에 Server 줄이 있다는 것 자체가 서버와 주고받기가 됐다는 뜻이다.',
+      '<code>;; communications error to 192.0.2.1#53: timed out</code>과 <code>;; no servers could be reached</code>: 정해진 시간 안에 <b>아무 답도 받지 못했다</b>. 이름이 있는지 없는지는 모른다. NXDOMAIN과는 다르다.',
+    ],
+    questions: [
+      { key: 'ns.server', label: '질의한 DNS 서버(물어본 쪽)의 주소는 무엇인가?', placeholder: 'IPv4 주소' },
+      { key: 'ns.result', label: '이 조회는 어떻게 끝났는가?', choices: NS_RESULTS },
+      { key: 'ns.ipv4', label: '조회 결과로 받은 IPv4 주소는 무엇인가? 주소를 받지 못했으면 "없음"이라고 적는다.', placeholder: 'IPv4 주소 또는 없음' },
+    ],
+    fixes: [
+      ['nx', '<code>** server can\'t find 이름: NXDOMAIN</code>: DNS 서버가 응답은 했고, 그런 이름은 없다고 답했다. 이름의 철자를 확인한다. DNS 서버까지는 닿았으므로 연결 문제가 아니다.'],
+      ['timeout', '<code>;; communications error ... timed out</code>과 <code>;; no servers could be reached</code>: 정해진 시간 안에 DNS 서버에서 아무 답도 받지 못했다. 이름이 없다는 뜻이 아니다. 물어본 서버 주소가 맞는지, 그 서버까지 닿는지(1-3의 경로, 1-6의 ping)를 확인한다.'],
+      ['servfail', '<code>** server can\'t find 이름: SERVFAIL</code>: DNS 서버가 답을 찾다가 실패했다고 알려 왔다. 이름이 없다는 뜻은 아니다. 잠시 뒤 다시 실행해 본다.'],
+      ['notfound', '<code>nslookup: command not found</code>: 이 명령을 실행할 도구가 없다. 0-3의 <code>sudo dnf install -y bind-utils</code>로 설치하거나, 이 카드를 \'예시로 연습\'으로 진행한다.'],
+    ],
+    fixFor: res => (res.status === 'notfound' ? 'notfound' : { nxdomain: 'nx', timeout: 'timeout', servfail: 'servfail' }[res.outcome] || null),
+    next: 'ping',
+  };
+  RULES['ns.server'] = res => {
+    const v = res.values, s = v.serverAddress || v.server || v.failedServer;
+    if (!s) return { skip: '이 출력에는 질의한 DNS 서버 주소가 없어 채점하지 않는다.' };
+    return {
+      type: 'ip', accept: [s], show: s, lines: (v.server ? res.evidence.server : res.evidence.outcome) || [],
+      explain: v.server ? 'Server:와 그 아래 Address: 줄이 물어본 DNS 서버다. #53은 DNS가 쓰는 포트 번호라서 주소에 넣지 않는다.'
+        : 'Server 줄이 없다. 대신 ";; communications error to ' + s + '#53" 줄에 물어본 서버 주소가 있다. 이 서버에서는 답을 받지 못했다.',
+    };
+  };
+  RULES['ns.result'] = res => {
+    const o = res.outcome;
+    const show = o === 'answer' ? NS_RESULTS[0] : o === 'nxdomain' ? NS_RESULTS[1] : o === 'timeout' ? NS_RESULTS[2] : null;
+    if (!show) return { skip: '이 출력(' + (o || '알 수 없음') + ')은 세 가지 보기 가운데 어느 것에도 딱 맞지 않아 채점하지 않는다. 위의 \'이렇게 나오면\'을 본다.' };
+    return {
+      type: 'choice', accept: [show], show, lines: (o === 'answer' ? res.evidence.answers : res.evidence.outcome) || [],
+      explain: o === 'answer' ? 'Non-authoritative answer 아래에 Name과 Address 줄이 있다. DNS 서버가 이름에 해당하는 주소를 알려 줬다.'
+        : o === 'nxdomain' ? 'NXDOMAIN은 DNS 서버가 "그런 이름은 없다"고 답했다는 뜻이다. 서버에서 답은 받았다.'
+        : 'timed out과 no servers could be reached는 정해진 시간 안에 아무 답도 받지 못했다는 뜻이다. 이름이 없다는 답(NXDOMAIN)과 다르다.',
+    };
+  };
+  RULES['ns.ipv4'] = res => {
+    const ips = res.values.ipv4 || [];
+    const lines = res.values.answers.filter(a => a.family === 4).map(a => a.line);
+    return {
+      type: 'ip', accept: ips.length ? ips : ['없음', '없다', 'none', '-'], show: ips.length ? ips.join(' 또는 ') : '없음',
+      lines: lines.length ? lines : res.evidence.outcome || [],
+      explain: ips.length ? 'Non-authoritative answer 아래의 Address 줄 가운데 점 네 덩어리로 된 값이 IPv4 조회 결과다. 위쪽 Server 아래의 Address(DNS 서버 주소)와 헷갈리지 않는다.' + (ips.length > 1 ? ' 주소가 여러 개라 어느 것을 적어도 정답이다.' : '')
+        : '조회 결과(Name/Address 줄)가 없다. 주소를 받지 못했다.',
+    };
+  };
+
+  // ----- 1-6 ping -----
+  const SAMPLE_PING_GW = 'PING 172.16.89.2 (172.16.89.2) 56(84) bytes of data.\n64 bytes from 172.16.89.2: icmp_seq=1 ttl=128 time=0.528 ms\n64 bytes from 172.16.89.2: icmp_seq=2 ttl=128 time=0.484 ms\n64 bytes from 172.16.89.2: icmp_seq=3 ttl=128 time=0.487 ms\n64 bytes from 172.16.89.2: icmp_seq=4 ttl=128 time=0.347 ms\n\n--- 172.16.89.2 ping statistics ---\n4 packets transmitted, 4 received, 0% packet loss, time 3090ms\nrtt min/avg/max/mdev = 0.347/0.461/0.528/0.068 ms';
+  const SAMPLE_PING_OUT = 'PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.\n64 bytes from 8.8.8.8: icmp_seq=1 ttl=128 time=132 ms\n64 bytes from 8.8.8.8: icmp_seq=2 ttl=128 time=52.8 ms\n64 bytes from 8.8.8.8: icmp_seq=3 ttl=128 time=52.3 ms\n64 bytes from 8.8.8.8: icmp_seq=4 ttl=128 time=50.3 ms\n\n--- 8.8.8.8 ping statistics ---\n4 packets transmitted, 4 received, 0% packet loss, time 3005ms\nrtt min/avg/max/mdev = 50.266/71.826/131.910/34.702 ms';
+  const SAMPLE_PING_WIN = 'PING 172.16.89.1 (172.16.89.1) 56(84) bytes of data.\n\n--- 172.16.89.1 ping statistics ---\n4 packets transmitted, 0 received, 100% packet loss, time 3088ms';
+  const PING_JUDGE = ['목적지가 ICMP 확인 요청에 응답했다', '응답이 없었다. 이것만으로는 장애라고 단정할 수 없다', '응답이 없었다. 목적지 장비에 장애가 있다'];
+  CARDS['ping'] = {
+    no: '1-6',
+    title: 'ping -c 4 — 네 번 중 몇 번 응답을 받았는지 읽기',
+    question: '게이트웨이, 인터넷 주소(8.8.8.8), Windows PC에 각각 ping을 보내면 네 번 중 몇 번 응답이 돌아오는가? 응답이 없으면 무엇을 알 수 있고 무엇을 알 수 없는가?',
+    place: 'ssh-vm',
+    commands: env => [
+      { label: '기본 게이트웨이 (1-3에서 찾은 주소)', cmd: 'ping -c 4 ' + val(env.gateway, '게이트웨이주소') },
+      { label: '인터넷 주소 (구글 공개 DNS 서버)', cmd: 'ping -c 4 8.8.8.8' },
+      { label: 'Windows PC (VMware 네트워크 쪽 주소)', cmd: 'ping -c 4 -W 1 ' + val(winHost(env), 'Windows주소') },
+    ],
+    needs: env => [env.gateway ? null : '게이트웨이주소', winHost(env) ? null : 'Windows주소'].filter(Boolean),
+    lead: '1-1과 같은 창(SSH로 VM에 접속한 PowerShell 창)에서 아래 세 명령을 하나씩 실행한다. 응답이 기대되는 게이트웨이부터 보낸다.',
+    parts: [
+      ['ping', '상대 장비에 \'응답해 달라\'는 짧은 확인 메시지(ICMP 확인 요청)를 보내고 답이 돌아오는지 본다(0-2).'],
+      ['-c 4', 'count(횟수)의 c다. 확인 요청을 네 번 보낸 뒤 멈추라는 뜻이다. 이 옵션이 없으면 리눅스의 ping은 Ctrl + C를 누를 때까지 계속 보낸다.'],
+      ['-W 1', '응답을 기다리는 시간을 초 단위로 정한다. 1이면 1초다. 응답하지 않을 수 있는 상대에게 보낼 때 너무 오래 기다리지 않게 하려고 (3)에만 붙였다.'],
+      ['목적지 IP', '확인 요청을 보낼 장비의 주소다. (1)은 1-3에서 찾은 기본 게이트웨이, (2)는 0-2에서 쓴 8.8.8.8, (3)은 VMware 네트워크 쪽 Windows PC 주소다.'],
+    ],
+    values: env => {
+      const w = winHost(env);
+      return (env.gateway ? '(1)의 <code>' + env.gateway + '</code>는 1-3에서 저장한 기본 게이트웨이다. ' : '(1)의 <code>게이트웨이주소</code>는 1-3의 <code>ip route</code>에서 찾은 via 뒤 주소로 바꾼다. 1-3을 채점하면 자동으로 채워진다. ') +
+        (w ? '(3)의 <code>' + w + '</code>는 내 VM IP(' + env.ipv4 + ')의 마지막 덩어리를 1로 바꾼 주소다. VMware NAT에서 Windows PC의 VMware 네트워크(VMnet8) 쪽 주소는 보통 이 주소다. 다르면 PowerShell에서 <code>ipconfig</code>를 실행해 \'VMware Network Adapter VMnet8\'의 IPv4 주소로 바꾼다.'
+          : '(3)의 <code>Windows주소</code>는 Windows PC의 VMware 네트워크(VMnet8) 쪽 주소다. VMware NAT에서는 보통 VM IP의 마지막 덩어리를 1로 바꾼 주소다(예: 172.16.89.1). 0-2에서 VM IP를 저장하면 자동으로 채워진다.');
+    },
+    ends: '1초에 한 번씩 네 번 보낸 뒤 통계 줄을 출력하고 끝난다. 응답이 하나도 없어도 네 번 보낸 뒤 끝난다. 3~4초쯤 걸린다.',
+    copy: {
+      from: '<code>PING</code>으로 시작하는 첫 줄.',
+      to: '<code>packets transmitted</code>가 들어 있는 통계 줄. 그 아래 <code>rtt min/avg/max/mdev</code> 줄이 있으면 그 줄까지. 응답이 없으면 rtt 줄은 나오지 않는다.',
+      extra: '명령 하나의 출력만 붙여 넣는다. 명령 줄까지 함께 복사하면 무엇을 보냈는지 앱이 더 확실히 안다.',
+      fail: '<code>ping: ...: Name or service not known</code>처럼 한 줄 오류만 나오면 그 줄을 복사한다.',
+    },
+    pasteLabel: '내 Linux 출력',
+    expect: 'ping',
+    gradeOn: ['fail'],
+    example: {
+      shown: [{ label: '(1) <code>ping -c 4 172.16.89.2</code> — 게이트웨이', text: SAMPLE_PING_GW }, { label: '(2) <code>ping -c 4 8.8.8.8</code>', text: SAMPLE_PING_OUT }, { label: '(3) <code>ping -c 4 -W 1 172.16.89.1</code> — Windows PC', text: SAMPLE_PING_WIN }],
+      output: '[jin@localhost ~]$ ping -c 4 192.168.10.2\n' + toExample(SAMPLE_PING_GW),
+      note: '아래 값(192.168.10.2)은 예시다. 내 VM의 값과 다르다.',
+    },
+    reading: [
+      '<code>PING 172.16.89.2 (172.16.89.2) 56(84) bytes of data.</code>: 목적지와 보낼 크기다. 56은 확인 요청에 담는 데이터 크기(바이트), 괄호 안의 84는 머리말까지 더한 전체 크기다.',
+      '<code>64 bytes from 172.16.89.2: icmp_seq=1 ttl=128 time=0.528 ms</code>: 응답 하나다. <code>icmp_seq</code>는 몇 번째 요청에 대한 응답인지, <code>time</code>은 보내고 받기까지 걸린 왕복 시간이다. <code>ttl</code>은 응답 패킷에 남은 수명 값인데, VMware NAT에서는 NAT 장치가 대신 답하기 때문에 8.8.8.8의 응답도 128처럼 보일 수 있다. 이 값으로 거리를 따지지 않는다.',
+      '<code>4 packets transmitted, 4 received, 0% packet loss</code>: 네 번 보내 네 번 받았다. 몇 번 응답을 받았는지는 이 통계 줄의 received로 읽는다.',
+      '(3)처럼 응답 줄 없이 <code>4 packets transmitted, 0 received, 100% packet loss</code>만 나오면 응답을 하나도 받지 못한 것이다. Windows PC는 기본 방화벽 설정이 다른 장비의 ping(ICMP 확인 요청)에 응답하지 않게 되어 있을 수 있다. 실제로 작성자의 환경에서는 172.16.89.1이 ping에 응답하지 않았지만 같은 Windows PC에서 0-4의 SSH 접속은 됐다. ping 실패만으로 장애라고 단정하지 않는다.',
+    ],
+    questions: [
+      { key: 'ping.target', label: '확인 요청을 보낸 목적지 IP는 무엇인가? (PING 줄의 괄호 안)', placeholder: 'IPv4 주소' },
+      { key: 'ping.replies', label: '네 번 중 목적지에서 받은 응답은 몇 번인가? (숫자만)', placeholder: '숫자' },
+      { key: 'ping.judge', label: '이 결과로 말할 수 있는 것은 무엇인가?', choices: PING_JUDGE },
+    ],
+    fixes: [
+      ['loss', '<code>100% packet loss</code>(응답 0번): 목적지가 응답하지 않았다. 상대가 꺼졌는지, 방화벽이 ICMP를 막는지, 경로가 끊겼는지 이것만으로는 구분할 수 없다. 특히 Windows PC는 기본 방화벽 설정 때문에 ping에 응답하지 않을 수 있다. 1-8의 nc나 1-9의 Test-NetConnection처럼 다른 방법으로 함께 확인한다.'],
+      ['some', '일부만 응답했다(예: <code>4 packets transmitted, 3 received</code>): 연결은 되지만 일부 요청이 사라졌다.'],
+      ['unreach-from', '<code>From 주소 icmp_seq=1 Destination Host Unreachable</code>: 목적지가 아니라 다른 장비(또는 이 VM 자신)가 "그 주소의 장비를 찾을 수 없다"고 알려 온 것이다. 목적지 응답으로 세지 않는다.'],
+      ['resolve', '<code>ping: 이름: Name or service not known</code> 또는 <code>Temporary failure in name resolution</code>: 이름을 IP로 바꾸지 못해 확인 요청을 보내지도 못했다. ICMP 실패가 아니라 이름 조회 실패다. 1-5의 nslookup으로 확인한다.'],
+      ['netunreach', '<code>ping: connect: Network is unreachable</code>: 이 목적지로 가는 경로가 없어 보내지도 못했다. 1-3의 <code>default</code> 줄을 확인한다.'],
+    ],
+    fixFor: res => (res.values && res.values.unreachable && res.values.unreachable.length ? 'unreach-from'
+      : { none: 'loss', some: 'some', 'resolve-fail': 'resolve', 'network-unreachable': 'netunreach' }[res.outcome] || null),
+    readNote: (res, env) => (res.values && res.values.targetIp && res.values.targetIp === winHost(env)
+      ? '이 목적지(' + res.values.targetIp + ')는 VMware 네트워크 쪽 Windows PC 주소로 보인다. Windows는 기본 방화벽 설정에서 ping에 응답하지 않을 수 있다.' : null),
+    next: 'ss',
+  };
+  RULES['ping.target'] = res => {
+    const t = res.values.targetIp || res.values.target;
+    if (!t) return { skip: '이 출력에는 목적지가 없어 채점하지 않는다.' };
+    return {
+      type: 'ip', accept: [t], show: t, lines: res.evidence.target || res.evidence.error || [],
+      explain: 'PING 줄의 괄호 안이 확인 요청을 보낸 목적지 IP다.' + (res.values.target !== t && res.values.target ? ' 이름(' + res.values.target + ')을 넣었다면 괄호 안이 이름 조회로 얻은 IP다.' : ''),
+    };
+  };
+  RULES['ping.replies'] = res => {
+    const v = res.values;
+    if (v.transmitted == null) return { skip: '통계 줄이 없어(요청을 보내지 못했거나 출력이 잘렸다) 응답 수를 채점하지 않는다.' };
+    return {
+      type: 'number', accept: [String(v.destinationReplies)], show: v.destinationReplies + '번',
+      lines: (res.evidence.received || []).concat(res.evidence.notFromDestination || []),
+      explain: '통계 줄의 "' + v.transmitted + ' packets transmitted, ' + v.received + ' received"는 ' + v.transmitted + '번 보내 ' + v.received + '번 받았다는 뜻이다.' +
+        (v.destinationReplies !== v.received ? ' 그중 목적지가 아닌 곳에서 온 응답은 빼서 ' + v.destinationReplies + '번이다.' : '') +
+        (v.errorReplies ? ' From ... Unreachable 줄 ' + v.errorReplies + '개는 목적지의 응답이 아니라 오류 알림이다.' : ''),
+    };
+  };
+  RULES['ping.judge'] = res => {
+    const v = res.values;
+    if (v.transmitted == null) return { skip: '확인 요청을 보내지 못해(이름 조회 실패, 경로 없음 등) 이 질문은 채점하지 않는다. 위의 \'이렇게 나오면\'을 본다.' };
+    const show = v.destinationReplies > 0 ? PING_JUDGE[0] : PING_JUDGE[1];
+    return {
+      type: 'choice', accept: [show], show, lines: res.evidence.received || [],
+      explain: v.destinationReplies > 0 ? '목적지에서 응답을 받았다. 목적지까지 ICMP 확인 요청이 오갔다는 것까지 말할 수 있다. SSH 로그인이나 웹 접속이 되는지는 아직 모른다.'
+        : '응답이 0번이다. 상대가 꺼졌는지, 방화벽이 ICMP만 막는지, 경로가 끊겼는지 이 출력만으로는 구분할 수 없다. 그래서 장애라고 단정하지 않는다.',
+    };
+  };
+
   // ----- 0단계 확인 질문의 채점 규칙 (붙여 넣은 출력이 있을 때만 쓴다. fixed는 출력 없이도 채점) -----
   const normName = s => String(s || '').replace(/["']/g, '').replace(/\s+/g, ' ').trim();
   RULES['os.pretty'] = res => ({
@@ -851,6 +1039,12 @@
     { id: 'lab-route-get', menu: 'ip route get', cards: ['route-get'], group: '1단계 · 명령 익히기',
       title: '목적지 하나에 실제로 쓰이는 경로 읽기',
       intro: '목적지가 내 네트워크 밖에 있을 때와 안에 있을 때 선택되는 경로를 비교한다. 같은 서브넷으로는 via 없이 직접 보낸다.' },
+    { id: 'lab-nslookup', menu: 'nslookup', cards: ['nslookup'], group: '1단계 · 명령 익히기',
+      title: '질의한 DNS 서버와 조회 결과 구분하기',
+      intro: '이름을 IP로 바꿀 때 누구에게 물어보는지, 어떤 답을 받는지 읽는다. "그런 이름은 없다"는 답(NXDOMAIN)과 "답이 없다"(응답 없음)를 구분한다.' },
+    { id: 'lab-ping', menu: 'ping -c 4', cards: ['ping'], group: '1단계 · 명령 익히기',
+      title: '네 번 중 몇 번 응답을 받았는지 읽기',
+      intro: '응답이 기대되는 게이트웨이부터 ping을 보낸다. 응답이 없을 때 그것만으로 장애라고 단정할 수 없는 이유를 함께 본다.' },
   ]);
 
   root.LabData = { PLACES, CARDS, RULES, PAGES, EXAMPLE_ENV };
