@@ -202,19 +202,27 @@
   }
 
   // ---------- 도구 없음 ----------
+  // CentOS의 command-not-found 도우미는 "command not found..."처럼 끝에 점을 붙이고,
+  // "Install package 'x' to provide command 'y'? [N/y]" 또는 "Similar command is: 'z'" 줄을 이어 붙인다.
   function findNotFound(lines) {
+    let found = null;
     for (const l of lines) {
       const s = l.trim();
-      let m = /^(?:-?\w*sh:\s+)?(?:sudo:\s+)?(?:line \d+:\s+)?([\w.-]+):\s+command not found$/.exec(s);
-      if (m) return { tool: m[1], line: l, os: 'linux' };
-      m = /^sudo:\s+([\w.-]+):\s+command not found$/.exec(s);
-      if (m) return { tool: m[1], line: l, os: 'linux' };
-      m = /'([^']+)'\s*용어가.*인식되지 않습니다/.exec(s) || /The term '([^']+)' is not recognized/.exec(s);
-      if (m) return { tool: m[1], line: l, os: 'windows' };
-      m = /^'([^']+)'은\(는\) 내부 또는 외부 명령/.exec(s) || /^'([^']+)' is not recognized as an internal or external command/.exec(s);
-      if (m) return { tool: m[1], line: l, os: 'windows' };
+      let m;
+      if (!found) {
+        m = /^(?:-?[\w/]*sh:\s+)?(?:line \d+:\s+)?(?:sudo:\s+)?(\S+?):\s+command not found\.*$/.exec(s);
+        if (m) { found = { tool: m[1], line: l, os: 'linux', extra: [] }; continue; }
+        m = /'([^']+)'\s*용어가\s*cmdlet/.exec(s) || /The term '([^']+)' is not recognized/.exec(s) ||
+          /^'([^']+)'은\(는\) 내부 또는 외부 명령/.exec(s) || /^'([^']+)' is not recognized as an internal or external command/.exec(s) ||
+          /ObjectNotFound:\s*\(([^:)]+):String\).*CommandNotFoundException/.exec(s);
+        if (m) { found = { tool: m[1], line: l, os: 'windows', extra: [] }; continue; }
+      } else if (found.os === 'linux') {
+        if ((m = /^Install package '([^']+)' to provide command '([^']+)'\?/.exec(s))) { found.helperPackage = m[1]; found.extra.push(l); continue; }
+        if ((m = /^Similar commands? (?:is|are):?\s*(.*)$/.exec(s))) { found.similar = m[1].replace(/'/g, '').trim() || null; found.extra.push(l); continue; }
+        if (/^'[^']+'$/.test(s) && found.similar === null) { found.similar = s.replace(/'/g, ''); found.extra.push(l); continue; }
+      }
     }
-    return null;
+    return found;
   }
 
   // ---------- 출력 모양으로 명령 알아보기 ----------
@@ -536,7 +544,7 @@
       if ((m = /^rtt min\/avg\/max\/mdev = ([\d.]+)\/([\d.]+)\/([\d.]+)\/([\d.]+) ms/.exec(t))) { v.rtt = { min: +m[1], avg: +m[2], max: +m[3], mdev: +m[4] }; ev(r, 'rtt', l); return; }
       if ((m = /^ping: (\S+): (Name or service not known|Temporary failure in name resolution|No address associated with hostname)/.exec(t))) {
         r.status = 'fail'; r.outcome = 'resolve-fail'; v.target = m[1]; ev(r, 'error', l);
-        r.message = '"' + m[1] + '"의 IP 주소를 찾지 못했다(' + m[2] + '). ping을 보내기 전에 이름 조회에서 멈췄다.';
+        r.message = '"' + m[1] + '"의 IP 주소를 찾지 못했다(' + m[2] + '). ping 요청(ICMP)을 보내기 전에 이름 조회에서 멈췄으므로 ICMP 실패가 아니라 이름 조회 실패다.';
         return;
       }
       if (/^ping: (connect: )?Network is unreachable/.test(t)) { r.status = 'fail'; r.outcome = 'network-unreachable'; ev(r, 'error', l); r.message = '이 목적지로 보낼 경로가 없다(Network is unreachable). 요청을 보내지도 못했다.'; return; }
@@ -544,18 +552,29 @@
       r.unparsed.push(l);
     });
     v.ttls = v.replies.map(x => x.ttl).filter((x, i, a) => a.indexOf(x) === i);
+    // 목적지에서 온 정상 응답만 센다. "From 주소 ... Destination Host Unreachable"은 다른 장비(또는 내 VM)가 보낸 오류 알림이다.
+    const fromTarget = x => !v.targetIp || x.from === v.targetIp;
+    const otherReplies = v.replies.filter(x => !fromTarget(x));
+    v.errorReplies = v.unreachable.length;
+    otherReplies.forEach(x => ev(r, 'notFromDestination', x.line));
+    v.unreachable.forEach(x => ev(r, 'notFromDestination', x.line));
+    v.replies.filter(fromTarget).forEach(x => ev(r, 'destinationReplies', x.line));
     r.values = v;
     if (r.status === 'fail') return r;
     if (stats) {
+      // Linux는 오류 알림을 received가 아니라 errors로 센다. 목적지가 아닌 곳의 정상 응답만 빼면 된다.
+      v.destinationReplies = Math.max(0, v.received - otherReplies.length);
       if (v.requested && v.transmitted < v.requested) r.notes.push('-c ' + v.requested + '로 실행했지만 ' + v.transmitted + '번만 보냈다. 중간에 Ctrl + C로 멈췄을 수 있다.');
       if (v.replies.length && v.replies.length < v.received) r.notes.push('통계에는 ' + v.received + '번 받았다고 나오지만 응답 줄은 ' + v.replies.length + '개만 붙여 넣었다. 개수는 통계 줄을 기준으로 읽는다.');
-      if (v.received > 0) {
-        r.outcome = v.received === v.transmitted ? 'all' : 'some';
-        r.message = v.transmitted + '번 보내 ' + v.received + '번 응답을 받았다' + (v.received < v.transmitted ? '. 일부 요청은 응답을 받지 못했다.' : '.');
+      if (v.unreachable.length) r.notes.push('"From ' + v.unreachable[0].from + ' ... ' + v.unreachable[0].reason + '" 줄 ' + v.unreachable.length + '개는 목적지(' + (v.targetIp || v.target) + ')가 아니라 ' + v.unreachable[0].from + '가 보낸 오류 알림이다. 목적지 응답으로 세지 않는다.');
+      if (otherReplies.length) r.notes.push('목적지가 아닌 주소(' + otherReplies.map(x => x.from).join(', ') + ')에서 온 응답 ' + otherReplies.length + '개는 목적지 응답으로 세지 않는다.');
+      if (v.destinationReplies > 0) {
+        r.outcome = v.destinationReplies >= v.transmitted ? 'all' : 'some';
+        r.message = v.transmitted + '번 보내 목적지에서 ' + v.destinationReplies + '번 응답을 받았다' + (v.destinationReplies < v.transmitted ? '. 일부 요청은 응답을 받지 못했다.' : '.');
       } else {
         r.status = 'fail'; r.outcome = 'none';
-        r.message = v.transmitted + '번 보냈지만 응답을 하나도 받지 못했다. 이것만으로는 상대가 꺼졌는지, ICMP를 막는지, 경로가 끊겼는지 구분할 수 없다.';
-        if (v.unreachable.length) r.message += ' 중간 장비가 "' + v.unreachable[0].reason + '"라고 알려 왔다.';
+        r.message = v.transmitted + '번 보냈지만 목적지에서 응답을 하나도 받지 못했다. 이것만으로는 상대가 꺼졌는지, ICMP를 막는지, 경로가 끊겼는지 구분할 수 없다.';
+        if (v.unreachable.length) r.message += ' 대신 ' + v.unreachable[0].from + '가 "' + v.unreachable[0].reason + '"라고 알려 왔다.';
       }
     } else {
       r.status = 'partial';
@@ -589,7 +608,7 @@
       if (/^(요청 시간이 만료되었습니다\.?|Request timed out\.?)$/.test(t)) { v.timeouts++; ev(r, 'timeouts', l); return; }
       if ((m = /Ping 요청에서 (\S+?) 호스트를 찾을 수 없습니다/.exec(t)) || (m = /Ping request could not find host (\S+?)\./.exec(t))) {
         r.status = 'fail'; r.outcome = 'resolve-fail'; v.target = m[1]; ev(r, 'error', l);
-        r.message = '"' + m[1] + '"의 IP 주소를 찾지 못했다. ping을 보내기 전에 이름 조회에서 멈췄다.'; return;
+        r.message = '"' + m[1] + '"의 IP 주소를 찾지 못했다. ping 요청(ICMP)을 보내기 전에 이름 조회에서 멈췄으므로 ICMP 실패가 아니라 이름 조회 실패다.'; return;
       }
       if (/일반 오류|General failure|전송하지 못했습니다|transmit failed/i.test(t)) { ev(r, 'error', l); r.notes.push('전송 오류 줄이 있다: ' + t); return; }
       if (/에 대한 Ping 통계:$|^Ping statistics for /.test(t)) { ev(r, 'stats', l); return; }
@@ -610,18 +629,34 @@
       r.message = '"패킷: 보냄 = ..."(영어판은 "Packets: Sent = ...") 통계 줄이 없다. 몇 번 보내 몇 번 받았는지 확정할 수 없다.';
       return r;
     }
-    const echo = v.replies.length;
-    if (v.unreachable.length) r.notes.push('Windows는 "대상 호스트에 연결할 수 없습니다" 줄도 받음 개수에 넣는다. 실제로 목적지가 응답한 줄은 ' + echo + '개다.');
-    if (echo > 0) {
-      r.outcome = echo >= v.sent ? 'all' : 'some';
-      r.values.echoReplies = echo;
-      r.message = v.sent + '번 보내 목적지에서 ' + echo + '번 응답을 받았다.';
+    // Windows의 "받음"에는 다른 장비가 보낸 "대상 호스트에 연결할 수 없습니다" 오류 응답도 들어간다.
+    // 그래서 통계 숫자 대신, 목적지 주소에서 온 정상 응답 줄(바이트=… TTL=…)만 센다.
+    const dest = v.targetIp;
+    const destReplies = v.replies.filter(x => !dest || x.from === dest);
+    const otherReplies = v.replies.filter(x => dest && x.from !== dest);
+    v.destinationReplies = destReplies.length;
+    v.errorReplies = v.unreachable.length;
+    destReplies.forEach(x => ev(r, 'destinationReplies', x.line));
+    v.unreachable.forEach(x => ev(r, 'notFromDestination', x.line));
+    otherReplies.forEach(x => ev(r, 'notFromDestination', x.line));
+    const unexplained = v.received - destReplies.length - v.unreachable.length - otherReplies.length;
+    if (unexplained > 0) {
+      r.status = 'partial';
+      r.message = '통계에는 받음 = ' + v.received + '로 나오지만 붙여 넣은 응답 줄로는 ' + (v.received - unexplained) + '개만 확인된다. 응답 줄 일부가 빠졌다.';
+      return r;
+    }
+    if (v.received !== destReplies.length) {
+      const who = v.unreachable.concat(otherReplies).map(x => x.from).filter((x, i, a) => a.indexOf(x) === i).join(', ');
+      r.notes.push('통계의 "받음 = ' + v.received + '"과 목적지 응답 수(' + destReplies.length + ')가 다르다. 차이 ' + (v.received - destReplies.length) + '개는 목적지(' + (dest || v.target) + ')가 아니라 ' + who + '에서 온 ' + (v.unreachable.length ? '오류 응답(' + v.unreachable[0].reason + ')' : '응답') + '이다. Windows는 이런 오류 응답도 "받음"에 넣는다.');
+    }
+    if (destReplies.length > 0) {
+      r.outcome = destReplies.length >= v.sent ? 'all' : 'some';
+      r.message = v.sent + '번 보내 목적지에서 ' + destReplies.length + '번 정상 응답을 받았다.';
     } else {
       r.status = 'fail';
-      r.outcome = v.unreachable.length ? 'unreachable' : 'none';
-      r.values.echoReplies = 0;
+      r.outcome = 'none';
       r.message = v.unreachable.length
-        ? '받음 개수는 ' + v.received + '이지만 모두 "연결할 수 없음" 알림이다. 목적지에서 온 응답은 없다.'
+        ? v.sent + '번 보냈지만 목적지(' + (dest || v.target) + ')에서 온 정상 응답은 0개다. 통계의 받음 = ' + v.received + '은 ' + v.unreachable[0].from + '가 보낸 "' + v.unreachable[0].reason + '" 오류 응답을 센 것이다.'
         : v.sent + '번 보냈지만 응답을 하나도 받지 못했다. Windows 호스트나 서버가 기본 방화벽으로 ICMP를 막는 경우에도 이렇게 나오므로, 이것만으로 장애라고 판단하지 않는다.';
     }
     return r;
@@ -902,16 +937,24 @@
     // 도구 없음
     const nf = findNotFound(out);
     if (nf) {
-      const tool = nf.tool.replace(/^.*\//, '');
+      const tool = nf.tool.replace(/^.*[\/\\]/, '');
       base.kind = (cmd && cmd.kind) || TOOL_KIND[tool.toLowerCase()] || null;
       base.label = base.kind ? KINDS[base.kind].label : tool;
       base.status = 'notfound';
-      base.values = { tool, package: nf.os === 'linux' ? PACKAGES[tool] || null : null, os: nf.os };
-      if (base.values.package) base.values.install = 'sudo dnf install -y ' + base.values.package;
+      const pkg = nf.os === 'linux' ? nf.helperPackage || PACKAGES[tool] || null : null;
+      base.values = { tool, package: pkg, os: nf.os, similar: nf.similar || null, notACommand: isIp(tool) };
+      if (pkg) base.values.install = 'sudo dnf install -y ' + pkg;
       ev(base, 'tool', nf.line);
-      base.message = nf.os === 'linux'
-        ? '이 명령을 실행할 도구(' + tool + ')를 찾지 못했다. 입력이 틀린 것이 아니라 도구가 설치되어 있지 않다.' + (base.values.install ? ' ' + base.values.install + ' 로 설치하거나, 설치하지 않고 예시 모드로 진행한다.' : '')
-        : 'Windows에서 ' + tool + ' 명령을 찾지 못했다.' + (tool.toLowerCase() === 'ssh' ? ' Windows 설정의 "선택적 기능"에서 OpenSSH 클라이언트를 추가한다.' : '');
+      nf.extra.forEach(l => ev(base, 'tool', l));
+      if (nf.os === 'linux' && isIp(tool)) {
+        base.message = '"' + tool + '"는 명령이 아니라 주소다. 명령 이름 없이 주소만 입력해서 셸이 이것을 명령으로 찾다가 실패했다. 주소 앞에 ping 같은 명령 이름을 붙여 다시 실행한다.';
+      } else if (nf.os === 'linux') {
+        base.message = '이 명령을 실행할 도구(' + tool + ')를 찾지 못했다. 입력이 틀린 것이 아니라 도구가 설치되어 있지 않다.' +
+          (base.values.install ? ' ' + base.values.install + ' 로 설치하거나, 설치하지 않고 예시 모드로 진행한다.' : '') +
+          (nf.extra.some(l => /^\s*Install package/.test(l)) ? ' 터미널이 "Install package ...? [N/y]"라고 물으면 y를 입력해 바로 설치할 수도 있다.' : '');
+      } else {
+        base.message = 'Windows에서 ' + tool + ' 명령을 찾지 못했다.' + (tool.toLowerCase() === 'ssh' ? ' Windows 설정의 "선택적 기능"에서 OpenSSH 클라이언트를 추가한다.' : ' 명령 이름의 철자를 확인하고, 필요한 프로그램이 설치되어 있는지 확인한다.');
+      }
       return finish(base, expect);
     }
 

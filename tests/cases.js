@@ -44,6 +44,20 @@
     tncKoreanWarn: 'PS C:\\Users\\jin> Test-NetConnection 192.168.10.130 -Port 443\n경고: TCP connect to (192.168.10.130 : 443) failed\n경고: Ping to 192.168.10.130 failed with status: TimedOut\n\n\nComputerName           : 192.168.10.130\nRemoteAddress          : 192.168.10.130\nRemotePort             : 443\nInterfaceAlias         : VMware Network Adapter VMnet8\nSourceAddress          : 192.168.10.1\nPingSucceeded          : False\nPingReplyDetails (RTT) : 0 ms\nTcpTestSucceeded       : False',
     tncPortNoResult: 'ComputerName     : 172.16.89.128\nRemoteAddress    : 172.16.89.128\nRemotePort       : 22',
     unknownText: '안녕하세요\n이건 터미널 출력이 아닙니다',
+    // command-not-found 도우미 형식 (첫 예시의 두 줄은 사용자가 VM에서 실제로 본 줄을 옮긴 것)
+    nfIpTyped: 'jin@localhost:~$ 172.16.89.128\nbash: 172.16.89.128: command not found...',
+    nfHelperInstall: "jin@localhost:~$ traceroute -n 8.8.8.8\nbash: traceroute: command not found...\nInstall package 'traceroute' to provide command 'traceroute'? [N/y] n",
+    nfHelperPkgDiffers: "[jin@localhost ~]$ nslookup google.com\nbash: nslookup: command not found...\nInstall package 'bind-utils' to provide command 'nslookup'? [N/y] n\n[jin@localhost ~]$ ",
+    nfSimilar: "[jin@localhost ~]$ pign -c 4 8.8.8.8\nbash: pign: command not found...\nSimilar command is: 'ping'",
+    nfSimilarMany: "[jin@localhost ~]$ s -lnt\nbash: s: command not found...\nSimilar commands are:\n'ss'\n'sh'",
+    nfDashBash: '-bash: nc: command not found',
+    nfBashLine1: 'bash: line 1: traceroute: command not found',
+    nfWinNode: "PS C:\\Users\\jin> node test.js\nnode : 'node' 용어가 cmdlet, 함수, 스크립트 파일 또는 실행할 수 있는 프로그램 이름으로 인식되지 않습니다. 이름이 정확한지 확인하고 경로가 포함된 경우 경로가 올바른지 검증한 다음 다시 시도하십시오.\n위치 줄:1 문자:1\n+ node test.js\n+ ~~~~\n    + CategoryInfo          : ObjectNotFound: (node:String) [], CommandNotFoundException\n    + FullyQualifiedErrorId : CommandNotFoundException",
+    nfWinWrapped: "node : 'node' 용어가 cmdlet, 함수, 스크립트 파일 또는 실행할 수 있는 프로그램 이름으로 인식되지\n않습니다.",
+    // Linux ping: 다른 장비(게이트웨이)가 보낸 오류 알림과 목적지 응답이 섞인 경우
+    pingMixedUnreach: 'PING 172.16.89.200 (172.16.89.200) 56(84) bytes of data.\nFrom 172.16.89.2 icmp_seq=1 Destination Host Unreachable\n64 bytes from 172.16.89.200: icmp_seq=2 ttl=64 time=0.512 ms\n64 bytes from 172.16.89.200: icmp_seq=3 ttl=64 time=0.498 ms\n\n--- 172.16.89.200 ping statistics ---\n4 packets transmitted, 2 received, +1 errors, 50% packet loss, time 3050ms',
+    // Windows ping: 통계에 받음 = 2인데 응답 줄은 1개만 복사한 경우
+    winPingMissingLine: 'Ping 172.16.89.128 32바이트 데이터 사용:\n172.16.89.128의 응답: 바이트=32 시간<1ms TTL=64\n\n172.16.89.128에 대한 Ping 통계:\n    패킷: 보냄 = 4, 받음 = 2, 손실 = 2 (50% 손실),',
     osRelease: 'NAME="CentOS Stream"\nVERSION="10 (Coughlan)"\nID_LIKE="rhel fedora"\nVERSION_ID="10"\nPRETTY_NAME="CentOS Stream 10 (Coughlan)"',
   };
 
@@ -77,12 +91,12 @@
     const has = (arr, s) => (arr || []).some(l => l.indexOf(s) >= 0);
 
     // ---------- 샘플 파일 자체 ----------
-    test('샘플 파일: Linux 블록 19개, Windows 블록 3개를 읽는다', t => {
+    test('샘플 파일: Linux 블록 19개, Windows 블록 5개를 읽는다', t => {
       t.eq(linux.length, 19, 'Linux 블록 수');
-      t.eq(win.length, 3, 'Windows 블록 수');
+      t.eq(win.length, 5, 'Windows 블록 수');
       t.eq(win[0].command, 'ping 172.16.89.128', 'BOM 뒤 첫 명령');
     });
-    test('실제 샘플 22개 모두 명령 종류를 알아본다', t => {
+    test('실제 샘플 24개 모두 명령 종류를 알아본다', t => {
       linux.concat(win).forEach(b => {
         const cmd = A.parseCommand(b.command);
         const r = A.analyze(b.output);
@@ -237,7 +251,7 @@
       t.eq([a.status, a.outcome, a.values.timeouts, a.command], ['fail', 'none', 4, 'ping 172.16.89.1']);
       t.ok(/ICMP/.test(a.message), 'ICMP 차단 가능성을 설명한다');
       const b = A.analyze(MADE_UP.winPingUnreach);
-      t.eq([b.status, b.outcome, b.values.received, b.values.echoReplies], ['fail', 'unreachable', 4, 0]);
+      t.eq([b.status, b.outcome, b.values.received, b.values.destinationReplies, b.values.errorReplies], ['fail', 'none', 4, 0, 4]);
       const c = A.analyze(MADE_UP.winPingEnglish);
       t.eq([c.status, c.outcome, c.values.received, c.values.timeouts], ['ok', 'some', 3, 1]);
     });
@@ -384,6 +398,76 @@
       const second = A.analyze(MADE_UP.routeOtherVm, { expect: 'ip-route' });
       const third = A.analyze(L('ip route'), { expect: 'ip-route' });
       t.eq([first.values.gateway, second.values.gateway, third.values.gateway], ['172.16.89.2', '192.168.10.2', '172.16.89.2']);
+    });
+
+    // ---------- 2차: command-not-found 도우미 형식 ----------
+    test('[직접 만든 예시] "command not found..." + Install package 줄 → 도구 없음, 설치 안내', t => {
+      const r = A.analyze(MADE_UP.nfHelperInstall, { expect: 'traceroute' });
+      t.eq([r.status, r.kind, r.values.tool, r.values.install], ['notfound', 'traceroute', 'traceroute', 'sudo dnf install -y traceroute']);
+      t.ok(has(r.evidence.tool, 'command not found...') && has(r.evidence.tool, 'Install package'), '근거 줄 2개');
+      t.ok(/\[N\/y\]/.test(r.message), 'y로 바로 설치할 수 있다는 안내');
+      const p = A.analyze(MADE_UP.nfHelperPkgDiffers);
+      t.eq([p.status, p.kind, p.values.package, p.values.install], ['notfound', 'nslookup', 'bind-utils', 'sudo dnf install -y bind-utils'], 'Install package 줄의 패키지 이름');
+    });
+    test('[직접 만든 예시] 주소를 명령처럼 입력: "bash: 172.16.89.128: command not found..."', t => {
+      const r = A.analyze(MADE_UP.nfIpTyped);
+      t.eq([r.status, r.values.tool, r.values.notACommand, r.values.install], ['notfound', '172.16.89.128', true, undefined]);
+      t.ok(/명령이 아니라 주소/.test(r.message), '주소만 입력했다는 설명');
+    });
+    test('[직접 만든 예시] Similar command is / Similar commands are 줄', t => {
+      const a = A.analyze(MADE_UP.nfSimilar);
+      t.eq([a.status, a.values.tool, a.values.similar], ['notfound', 'pign', 'ping']);
+      const b = A.analyze(MADE_UP.nfSimilarMany);
+      t.eq([b.status, b.values.tool, b.values.similar], ['notfound', 's', 'ss']);
+    });
+    test('[직접 만든 예시] "-bash:" / "bash: line 1:" 앞머리', t => {
+      const a = A.analyze(MADE_UP.nfDashBash);
+      t.eq([a.status, a.kind, a.values.install], ['notfound', 'nc', 'sudo dnf install -y nmap-ncat']);
+      const b = A.analyze(MADE_UP.nfBashLine1);
+      t.eq([b.status, b.kind, b.values.install], ['notfound', 'traceroute', 'sudo dnf install -y traceroute']);
+    });
+    test('[직접 만든 예시] PowerShell "\'node\' 용어가 cmdlet ... 인식되지 않습니다" (줄바꿈된 경우 포함)', t => {
+      const a = A.analyze(MADE_UP.nfWinNode);
+      t.eq([a.status, a.values.tool, a.values.os, a.values.install], ['notfound', 'node', 'windows', undefined]);
+      const b = A.analyze(MADE_UP.nfWinWrapped);
+      t.eq([b.status, b.values.tool], ['notfound', 'node']);
+    });
+
+    // ---------- 2차: 목적지에서 받은 정상 응답 수 ----------
+    test('실제 Windows ping 172.16.89.200: 통계 받음 = 1이지만 목적지 응답은 0 (172.16.89.1의 오류 응답)', t => {
+      const r = A.analyze(W('ping 172.16.89.200'), { expect: 'win-ping' });
+      t.eq([r.status, r.outcome, r.values.sent, r.values.received], ['fail', 'none', 4, 1]);
+      t.eq([r.values.destinationReplies, r.values.errorReplies, r.values.timeouts, r.values.targetIp], [0, 1, 3, '172.16.89.200']);
+      t.ok(has(r.evidence.notFromDestination, '172.16.89.1의 응답: 대상 호스트에 연결할 수 없습니다'), '오류 응답 근거 줄');
+      t.ok(has(r.evidence.received, '받음 = 1'), '통계 근거 줄');
+      t.eq(r.evidence.destinationReplies, undefined, '목적지 응답 근거 줄 없음');
+      t.ok(/172\.16\.89\.1/.test(r.message) && /0개/.test(r.message), '통계와 다른 이유를 설명');
+    });
+    test('실제 Windows ping no-such-name.invalid: ICMP 실패가 아니라 이름 조회 실패', t => {
+      const r = A.analyze(W('ping no-such-name.invalid'), { expect: 'win-ping' });
+      t.eq([r.kind, r.status, r.outcome, r.values.target], ['win-ping', 'fail', 'resolve-fail', 'no-such-name.invalid']);
+      t.ok(/이름 조회 실패/.test(r.message), '이름 조회 실패로 설명');
+      t.ok(has(r.evidence.error, '호스트를 찾을 수 없습니다'), '근거 줄');
+    });
+    test('실제 Windows ping 172.16.89.128: 목적지 응답 4 = 통계 받음 4', t => {
+      const r = A.analyze(W('ping 172.16.89.128'));
+      t.eq([r.values.destinationReplies, r.values.errorReplies, r.values.received], [4, 0, 4]);
+      // 근거 줄은 같은 내용을 한 번만 남긴다(샘플에 "시간=2ms" 줄이 2개 있다)
+      t.eq(r.evidence.destinationReplies.length, 3);
+    });
+    test('[직접 만든 예시] Windows ping: 받음 = 2인데 응답 줄 1개만 복사 → 일부 누락 의심', t => {
+      const r = A.analyze(MADE_UP.winPingMissingLine);
+      t.eq([r.status, r.values.destinationReplies, r.values.received], ['partial', 1, 2]);
+    });
+    test('[직접 만든 예시] Linux ping: "From 172.16.89.2 ... Destination Host Unreachable"은 목적지 응답이 아니다', t => {
+      const a = A.analyze(MADE_UP.pingMixedUnreach);
+      t.eq([a.status, a.outcome, a.values.destinationReplies, a.values.errorReplies], ['ok', 'some', 2, 1]);
+      t.ok(has(a.evidence.notFromDestination, 'From 172.16.89.2 icmp_seq=1'), '오류 알림 근거 줄');
+      t.ok(a.notes.some(n => /목적지 응답으로 세지 않는다/.test(n)), '세지 않는 이유');
+      const b = A.analyze(MADE_UP.pingUnreachable);
+      t.eq([b.values.destinationReplies, b.values.errorReplies], [0, 3]);
+      const c = A.analyze(L('ping -c 4 8.8.8.8'));
+      t.eq([c.values.destinationReplies, c.values.errorReplies], [4, 0], '실제 샘플');
     });
 
     const passed = results.filter(r => r.ok).length;
