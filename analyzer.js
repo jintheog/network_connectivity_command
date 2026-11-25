@@ -1197,7 +1197,8 @@
     const outKind = detect(out);
     let kind = outKind || (cmd && cmd.kind) || null;
     if (cmd && cmd.kind && outKind && cmd.kind !== outKind) {
-      if (compatible(cmd.kind, outKind)) kind = outKind;
+      // ip route get의 오류 줄(RTNETLINK answers)은 ip route 모양이라 명령 줄을 따른다
+      if (compatible(cmd.kind, outKind)) kind = cmd.kind === 'ip-route-get' && outKind === 'ip-route' ? cmd.kind : outKind;
       else base.notes.push('명령 줄은 ' + (KINDS[cmd.kind] || {}).label + '인데 출력은 ' + KINDS[outKind].label + '의 모양이다. 출력 모양을 기준으로 분석했다.');
     }
     base.kind = kind;

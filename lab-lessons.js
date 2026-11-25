@@ -130,6 +130,7 @@
         { key: 'addr.inet6', label: 'inet6 줄에 있는 주소는 어떤 종류의 주소인가?', choices: ['IPv4 주소', 'IPv6 주소'] },
       ],
       after: 'save-address',
+      next: 'ip-route',
     },
   };
 
@@ -598,6 +599,175 @@
     },
   };
 
+  // ===== 1단계 나머지 명령 (1-3 ~ 1-10) =====
+  // 출력 예시(shown)는 samples/의 실제 출력이다. '예시로 연습'의 출력(output)은 같은 형식에 예시 주소(192.168.10.x)를 넣은 것이다.
+  EXAMPLE_ENV.gateway = '192.168.10.2';
+  const toExample = s => s.replace(/172\.16\.89\./g, '192.168.10.');
+  // VMware NAT에서 Windows PC의 VMnet8 주소는 보통 같은 네트워크의 .1이다 (/24일 때만 계산한다)
+  const winHost = env => (env.ipv4 && (env.prefix == null || env.prefix === 24) ? env.ipv4.split('.').slice(0, 3).join('.') + '.1' : null);
+  const val = (v, hole) => v || hole;
+  const COPY_EXTRA = '명령 줄과 프롬프트 줄이 함께 복사되어도 괜찮다. 앱이 알아서 빼고 읽는다.';
+
+  // ----- 1-3 ip route -----
+  const SAMPLE_ROUTE = 'default via 172.16.89.2 dev ens160 proto dhcp src 172.16.89.128 metric 100\n172.16.89.0/24 dev ens160 proto kernel scope link src 172.16.89.128 metric 100';
+  CARDS['ip-route'] = {
+    no: '1-3',
+    title: 'ip route — 기본 경로와 게이트웨이 찾기',
+    question: '이 VM은 자기 네트워크 밖(예: 인터넷)으로 가는 패킷을 누구에게 넘기는가? 같은 네트워크 안의 장비에는 어떻게 보내는가?',
+    place: 'ssh-vm',
+    command: () => 'ip route',
+    lead: '1-1과 같은 창(SSH로 VM에 접속한 PowerShell 창)에서 <code>ip route</code>를 입력하고 Enter를 누른다.',
+    parts: [
+      ['ip', '리눅스의 네트워크 설정을 보고 바꾸는 명령이다.'],
+      ['route', '라우팅 테이블(routing table)을 보여 달라는 뜻이다. 라우팅 테이블은 "어느 목적지로 가는 패킷을 어느 장치로, 누구에게 넘길지" 적어 둔 표다. 이 표의 한 줄을 경로(route)라고 한다. 뒤에 아무것도 쓰지 않으면 <code>ip route show</code>(경로 목록 보기)와 같다.'],
+    ],
+    values: () => '바꿀 값이 없다. 그대로 입력한다.',
+    ends: '결과를 보여주고 바로 끝난다. 프롬프트가 다시 나타나면 끝난 것이다.',
+    copy: {
+      from: '<code>default</code>로 시작하는 줄. 보통 첫 줄이다.',
+      to: '마지막 경로 줄. 작성자의 VM에서는 <code>172.16.89.0/24 dev ens160 ...</code>로 시작하는 둘째 줄이 마지막이었다. 줄이 더 있으면 모두 복사한다.',
+      extra: COPY_EXTRA,
+      fail: '<code>RTNETLINK answers: ...</code> 같은 오류 줄이 나오면 그 줄을 복사한다.',
+    },
+    pasteLabel: '내 Linux 출력',
+    expect: 'ip-route',
+    example: {
+      shown: [{ text: SAMPLE_ROUTE }],
+      output: '[jin@localhost ~]$ ip route\n' + toExample(SAMPLE_ROUTE),
+      note: '아래 값(192.168.10.2, 192.168.10.0/24)은 예시다. 내 VM의 값과 다르다.',
+    },
+    reading: [
+      '한 줄이 경로 하나다. 줄의 맨 앞은 목적지이고, 그 뒤는 그 목적지로 보내는 방법이다.',
+      '<code>default via 172.16.89.2 dev ens160</code>: <code>default</code>는 다른 줄에 맞는 목적지가 없을 때 쓰는 기본 경로다. <code>via</code> 뒤의 172.16.89.2가 패킷을 대신 넘겨받아 전달해 주는 장비, 곧 기본 게이트웨이다. <code>dev ens160</code>은 ens160 장치로 내보낸다는 뜻이다. 8.8.8.8처럼 이 VM의 네트워크 밖으로 가는 패킷은 이 줄을 따른다.',
+      '<code>172.16.89.0/24 dev ens160 ... scope link</code>: 172.16.89.0/24 네트워크(172.16.89.0부터 172.16.89.255까지)로 가는 패킷은 <code>via</code> 없이 ens160으로 직접 보낸다는 뜻이다. 같은 네트워크에 있는 장비에는 게이트웨이를 거치지 않는다. <code>scope link</code>는 이 목적지가 장치에 바로 연결된 네트워크 안에 있다는 표시다.',
+      '<code>src 172.16.89.128</code>은 이 경로로 보낼 때 출발지로 쓰는 이 VM의 주소다. <code>proto dhcp</code>는 DHCP(주소를 자동으로 나눠 주는 방식)로 받은 정보로 만든 경로, <code>proto kernel</code>은 장치에 주소를 붙일 때 커널(리눅스의 핵심 프로그램)이 자동으로 만든 경로라는 표시다.',
+      '<code>metric 100</code>은 같은 목적지로 가는 경로가 여럿일 때 고르는 우선순위 값이다. 값이 작은 경로를 먼저 쓴다.',
+    ],
+    questions: [
+      { key: 'route.gateway', label: 'default 줄의 via 뒤에 있는 기본 게이트웨이 주소는 무엇인가?', placeholder: 'IPv4 주소' },
+      { key: 'route.network', label: 'via 없이 dev로 바로 이어지는 줄의 목적지 네트워크는 무엇인가? (슬래시와 숫자까지)', placeholder: '예: 192.168.10.0/24' },
+      { key: 'route.pick', label: '8.8.8.8로 가는 패킷은 어느 줄을 따르는가?', choices: ['default 줄 (게이트웨이를 거친다)', 'via 없는 네트워크 줄 (직접 보낸다)'] },
+    ],
+    fixes: [
+      ['nodefault', '<code>default</code> 줄이 없다: 이 VM은 자기 네트워크 밖으로 나가는 길을 모른다. 0-2의 <code>ping -c 4 8.8.8.8</code>이 실패했다면 이 때문일 수 있다. 다만 출력 일부만 복사해서 안 보이는 것일 수도 있으므로 먼저 첫 줄부터 다시 복사한다.'],
+      ['multi', '<code>default</code> 줄이 두 개 이상이다: <code>metric</code> 값이 작은 줄을 먼저 쓴다. 이 앱도 metric이 가장 작은 줄의 게이트웨이를 정답으로 본다.'],
+    ],
+    fixFor: res => (res.kind === 'ip-route' && !res.values.gateway && res.status === 'partial' ? 'nodefault' : res.values.defaults && res.values.defaults.length > 1 ? 'multi' : null),
+    after: 'save-gateway',
+    next: 'route-get',
+  };
+  // 주소가 네트워크(CIDR) 안에 있는가 (IPv4만)
+  const v4num = a => a.split('.').reduce((n, x) => n * 256 + (+x), 0);
+  const inNet = (ip, net) => {
+    const m = /^([\d.]+)\/(\d+)$/.exec(net || '');
+    if (!m || !isV4(ip) || !isV4(m[1])) return false;
+    const bits = +m[2], size = Math.pow(2, 32 - bits);
+    return Math.floor(v4num(ip) / size) === Math.floor(v4num(m[1]) / size);
+  };
+  RULES['route.gateway'] = res => {
+    if (!res.values.gateway) return { skip: '이 출력에는 via가 있는 default 줄이 없어 채점하지 않는다.' };
+    return {
+      type: 'ip', accept: [res.values.gateway], show: res.values.gateway, lines: res.evidence.gateway || [],
+      explain: 'default 줄의 via 뒤 주소가 기본 게이트웨이다. 이 VM은 자기 네트워크 밖으로 가는 패킷을 모두 ' + res.values.gateway + '에 넘긴다. 이 주소를 내 환경 정보에 저장해 다음 명령에 채운다.',
+    };
+  };
+  RULES['route.network'] = res => {
+    const nets = res.values.connected.map(x => x.network);
+    if (!nets.length) return { skip: '이 출력에는 via 없는 네트워크 줄이 없어 채점하지 않는다.' };
+    return {
+      type: 'text', accept: nets.concat(nets.map(n => n.split('/')[0])), show: nets.join(' 또는 '),
+      lines: nets.map(n => (res.evidence['route:' + n] || [])[0]).filter(Boolean),
+      explain: nets[0] + ' 줄에는 via가 없다. 이 네트워크 안의 장비에는 게이트웨이를 거치지 않고 ' + res.values.connected[0].dev + ' 장치로 직접 보낸다는 뜻이다. 이 VM의 주소도 이 네트워크 안에 있다.',
+    };
+  };
+  RULES['route.pick'] = res => {
+    const direct = res.values.connected.find(x => inNet('8.8.8.8', x.network));
+    if (!direct && !res.values.gateway) return { skip: '8.8.8.8에 맞는 줄이 없어 채점하지 않는다.' };
+    const show = direct ? 'via 없는 네트워크 줄 (직접 보낸다)' : 'default 줄 (게이트웨이를 거친다)';
+    return {
+      type: 'choice', accept: [show], show,
+      lines: direct ? res.evidence['route:' + direct.network] : res.evidence.gateway,
+      explain: direct ? '8.8.8.8이 ' + direct.network + ' 안에 있어 그 줄을 따른다.'
+        : '8.8.8.8은 ' + (res.values.connected.map(x => x.network).join(', ') || '이 VM의 네트워크') + ' 안에 없다. 맞는 줄이 없으므로 기본 경로인 default 줄을 따라 게이트웨이 ' + res.values.gateway + '로 넘긴다.',
+    };
+  };
+
+  // ----- 1-4 ip route get -----
+  const SAMPLE_GET_OUT = '8.8.8.8 via 172.16.89.2 dev ens160 src 172.16.89.128 uid 1000\n    cache';
+  const SAMPLE_GET_GW = '172.16.89.2 dev ens160 src 172.16.89.128 uid 1000\n    cache';
+  CARDS['route-get'] = {
+    no: '1-4',
+    title: 'ip route get — 목적지 하나에 실제로 쓰이는 경로 읽기',
+    question: '8.8.8.8로 보내는 패킷과 게이트웨이로 보내는 패킷은 각각 어떤 경로를 따르는가? 왜 한쪽에는 via가 있고 다른 쪽에는 없는가?',
+    place: 'ssh-vm',
+    commands: env => [
+      { label: '이 VM의 네트워크 밖에 있는 주소 (구글 공개 DNS 서버)', cmd: 'ip route get 8.8.8.8' },
+      { label: '같은 네트워크 안에 있는 주소 (1-3에서 찾은 기본 게이트웨이)', cmd: 'ip route get ' + val(env.gateway, '게이트웨이주소') },
+    ],
+    needs: env => (env.gateway ? [] : ['게이트웨이주소']),
+    lead: '1-1과 같은 창(SSH로 VM에 접속한 PowerShell 창)에서 아래 두 명령을 하나씩 실행한다.',
+    parts: [
+      ['ip route', '라우팅 테이블을 보고 다루는 명령이다(1-3).'],
+      ['get', '목적지 하나를 주면, 그 목적지로 보낼 때 실제로 선택되는 경로 하나를 커널(리눅스의 핵심 프로그램)이 보는 그대로 보여준다. 경로를 찾아 보여줄 뿐 패킷을 실제로 보내지는 않는다.'],
+      ['8.8.8.8', '목적지 IP다. 0-2에서 ping을 보낸 구글 공개 DNS 서버 주소다.'],
+      ['게이트웨이 주소', '1-3에서 찾은 기본 게이트웨이 주소다. 같은 네트워크 안의 주소를 넣었을 때 결과가 어떻게 다른지 비교한다.'],
+    ],
+    values: env => env.gateway
+      ? '(2)의 <code>' + env.gateway + '</code>는 1-3에서 저장한 기본 게이트웨이다. 자동으로 채웠다.'
+      : '(2)의 <code>게이트웨이주소</code> 자리에 1-3의 <code>ip route</code>에서 찾은 default 줄의 via 뒤 주소를 넣는다. 1-3을 채점하면 자동으로 채워진다.',
+    ends: '결과를 보여주고 바로 끝난다. 프롬프트가 다시 나타나면 끝난 것이다.',
+    copy: {
+      from: '목적지 IP로 시작하는 첫 줄. 예: <code>8.8.8.8 via ...</code>',
+      to: '그 아래 들여쓴 <code>cache</code> 줄.',
+      extra: '명령 하나의 출력만 붙여 넣는다. 명령 줄까지 함께 복사하면 어느 목적지를 물었는지 앱이 더 확실히 안다.',
+      fail: '<code>RTNETLINK answers: Network is unreachable</code> 같은 오류가 나오면 그 한 줄을 복사한다.',
+    },
+    pasteLabel: '내 Linux 출력',
+    expect: 'ip-route-get',
+    example: {
+      shown: [{ label: '(1) <code>ip route get 8.8.8.8</code>', text: SAMPLE_GET_OUT }, { label: '(2) <code>ip route get 172.16.89.2</code>', text: SAMPLE_GET_GW }],
+      output: '[jin@localhost ~]$ ip route get 8.8.8.8\n' + toExample(SAMPLE_GET_OUT),
+      note: '아래 값(192.168.10.2, 192.168.10.130)은 예시다. 내 VM의 값과 다르다.',
+    },
+    reading: [
+      '첫 줄의 맨 앞은 목적지다. 그 뒤의 <code>via</code>, <code>dev</code>, <code>src</code>는 1-3의 <code>ip route</code>와 같은 뜻이다.',
+      '<code>8.8.8.8 via 172.16.89.2 dev ens160</code>: 8.8.8.8은 이 VM의 네트워크(172.16.89.0/24) 밖에 있다. 그래서 1-3의 <code>default</code> 줄이 선택되고, 게이트웨이 172.16.89.2를 거쳐 보낸다.',
+      '<code>172.16.89.2 dev ens160</code>: <code>via</code>가 없다. 172.16.89.2는 이 VM과 같은 네트워크(같은 서브넷) 안에 있어 1-3의 <code>172.16.89.0/24</code> 줄이 선택됐다. 같은 서브넷의 장비에는 게이트웨이를 거치지 않고 직접 보낸다. 서브넷은 주소의 앞부분(/24라면 앞의 세 덩어리)이 같은 장비들의 묶음이다.',
+      '<code>uid 1000</code>은 이 명령을 실행한 사용자의 번호다. 아래의 <code>cache</code> 줄과 함께 이 실습에서는 읽지 않는다.',
+    ],
+    questions: [
+      { key: 'get.via', label: 'via 뒤의 주소는 무엇인가? via가 없으면 "없음"이라고 적는다.', placeholder: 'IPv4 주소 또는 없음' },
+      { key: 'get.dev', label: '어느 장치로 내보내는가?', placeholder: '장치 이름' },
+      { key: 'get.kind', label: '이 목적지로는 어떻게 보내는가?', choices: ['게이트웨이를 거쳐 보낸다', '같은 네트워크라 직접 보낸다'] },
+    ],
+    fixes: [
+      ['unreach', '<code>RTNETLINK answers: Network is unreachable</code>: 이 목적지로 가는 경로가 없다. 1-3의 <code>ip route</code>에 <code>default</code> 줄이 있었는지 확인한다.'],
+    ],
+    fixFor: res => (res.outcome === 'unreachable' ? 'unreach' : null),
+    next: 'nslookup',
+  };
+  RULES['get.via'] = res => {
+    const v = res.values;
+    return {
+      type: 'ip', accept: v.via ? [v.via] : ['없음', '없다', 'none', '-'], show: v.via || '없음',
+      lines: (v.via ? res.evidence.via : res.evidence.destination) || [],
+      explain: v.via ? v.destination + '로 가는 패킷은 via 뒤의 ' + v.via + '(게이트웨이)에 넘겨 전달한다.'
+        : '이 줄에는 via가 없다. ' + v.destination + '는 이 VM과 같은 네트워크 안에 있어 게이트웨이를 거치지 않는다.',
+    };
+  };
+  RULES['get.dev'] = res => ({
+    type: 'text', accept: [res.values.dev], show: res.values.dev, lines: res.evidence.dev || [],
+    explain: 'dev 뒤의 ' + res.values.dev + '가 이 패킷을 내보내는 장치다. 1-1에서 찾은 장치와 같다.',
+  });
+  RULES['get.kind'] = res => {
+    const show = res.values.via ? '게이트웨이를 거쳐 보낸다' : '같은 네트워크라 직접 보낸다';
+    return {
+      type: 'choice', accept: [show], show, lines: res.evidence.destination || res.evidence.via || [],
+      explain: res.values.via ? 'via가 있으면 그 장비(게이트웨이)를 거쳐 보낸다. 목적지가 이 VM의 네트워크 밖에 있기 때문이다.'
+        : 'via가 없으면 같은 서브넷 안의 목적지라 장치에서 바로 보낸다. 같은 서브넷 안에서는 게이트웨이가 필요 없다.',
+    };
+  };
+
   // ----- 0단계 확인 질문의 채점 규칙 (붙여 넣은 출력이 있을 때만 쓴다. fixed는 출력 없이도 채점) -----
   const normName = s => String(s || '').replace(/["']/g, '').replace(/\s+/g, ' ').trim();
   RULES['os.pretty'] = res => ({
@@ -675,6 +845,12 @@
     { id: 'lab-ip-addr', menu: 'ip addr show dev', cards: ['ip-addr-dev'], group: '1단계 · 명령 익히기',
       title: '고른 장치의 주소 자세히 읽기',
       intro: '1-1에서 고른 장치 하나만 자세히 본다. 같은 주소가 inet 줄에 어떻게 나오는지, inet과 inet6이 어떻게 다른지 읽는다.' },
+    { id: 'lab-ip-route', menu: 'ip route', cards: ['ip-route'], group: '1단계 · 명령 익히기',
+      title: '기본 경로와 게이트웨이 찾기',
+      intro: '패킷을 어디로 보낼지는 라우팅 테이블이 정한다. 이 VM이 자기 네트워크 밖으로 가는 패킷을 누구에게 넘기는지(기본 게이트웨이) 찾는다.' },
+    { id: 'lab-route-get', menu: 'ip route get', cards: ['route-get'], group: '1단계 · 명령 익히기',
+      title: '목적지 하나에 실제로 쓰이는 경로 읽기',
+      intro: '목적지가 내 네트워크 밖에 있을 때와 안에 있을 때 선택되는 경로를 비교한다. 같은 서브넷으로는 via 없이 직접 보낸다.' },
   ]);
 
   root.LabData = { PLACES, CARDS, RULES, PAGES, EXAMPLE_ENV };

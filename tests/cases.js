@@ -574,6 +574,14 @@
       t.eq(A.analyze(txt, { expect: 'ip-br-addr' }).values.primary.ipv4, '192.168.10.130');
     });
 
+    // ---------- 1단계 나머지 명령 ----------
+    test('[직접 만든 예시] ip route get의 RTNETLINK 오류 줄은 명령 줄을 따라 ip route get으로 읽는다', t => {
+      const r = A.analyze('[jin@localhost ~]$ ip route get 10.9.9.9\nRTNETLINK answers: Network is unreachable', { expect: 'ip-route-get' });
+      t.eq([r.kind, r.status, r.outcome], ['ip-route-get', 'fail', 'unreachable']);
+      const r2 = A.analyze('[jin@localhost ~]$ ip route\nRTNETLINK answers: Operation not permitted', { expect: 'ip-route' });
+      t.eq(r2.kind, 'ip-route', 'ip route의 오류는 그대로 ip route');
+    });
+
     const passed = results.filter(r => r.ok).length;
     return { results, passed, failed: results.length - passed, total: results.length };
   }

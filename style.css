@@ -72,3 +72,7 @@ details.optional summary b{display:inline-grid;place-items:center;min-width:22px
 .ready-box .chip{font-size:15px;padding:2px 12px}
 .fix-box{margin:8px 0;padding:8px 12px;background:#fff;border:1px solid #e3d2b0;border-radius:6px}.fix-box p{margin:4px 0 0}
 .connect code{background:#eef4f2;padding:1px 6px;border-radius:4px}
+/* ===== 1단계 나머지 명령 (여러 명령 카드, 실패 응답 읽기) ===== */
+.cmd-label{margin:10px 0 2px!important;font-size:14px}.cmd-label b{color:#17463a}
+.result-box{padding:8px 12px;border-radius:6px;border-left:3px solid #358466;background:#eff7f3;margin:6px 0}.result-box.warn{border-color:#c48a2a;background:#fff8ea}
+.result-box p{margin:4px 0}.inside-note{font-weight:600;color:#7a4b0c}
