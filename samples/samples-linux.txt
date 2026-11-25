@@ -1,0 +1,190 @@
+### $ ip -br addr
+lo               UNKNOWN        127.0.0.1/8 ::1/128 
+ens160           UP             172.16.89.128/24 fe80::20c:29ff:fe8f:fd2d/64 
+
+### $ ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host noprefixroute 
+       valid_lft forever preferred_lft forever
+2: ens160: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+    link/ether 00:0c:29:8f:fd:2d brd ff:ff:ff:ff:ff:ff
+    altname enp3s0
+    altname enx000c298ffd2d
+    inet 172.16.89.128/24 brd 172.16.89.255 scope global dynamic noprefixroute ens160
+       valid_lft 1528sec preferred_lft 1528sec
+    inet6 fe80::20c:29ff:fe8f:fd2d/64 scope link noprefixroute 
+       valid_lft forever preferred_lft forever
+
+### $ ip addr show dev ens160
+2: ens160: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+    link/ether 00:0c:29:8f:fd:2d brd ff:ff:ff:ff:ff:ff
+    altname enp3s0
+    altname enx000c298ffd2d
+    inet 172.16.89.128/24 brd 172.16.89.255 scope global dynamic noprefixroute ens160
+       valid_lft 1528sec preferred_lft 1528sec
+    inet6 fe80::20c:29ff:fe8f:fd2d/64 scope link noprefixroute 
+       valid_lft forever preferred_lft forever
+
+### $ ip route
+default via 172.16.89.2 dev ens160 proto dhcp src 172.16.89.128 metric 100 
+172.16.89.0/24 dev ens160 proto kernel scope link src 172.16.89.128 metric 100 
+
+### $ ip route get 8.8.8.8
+8.8.8.8 via 172.16.89.2 dev ens160 src 172.16.89.128 uid 1000 
+    cache 
+
+### $ ip route get 172.16.89.2
+172.16.89.2 dev ens160 src 172.16.89.128 uid 1000 
+    cache 
+
+### $ nslookup google.com
+Server:		172.16.89.2
+Address:	172.16.89.2#53
+
+Non-authoritative answer:
+Name:	google.com
+Address: 142.250.198.142
+Name:	google.com
+Address: 2404:6800:4005:81b::200e
+
+
+### $ nslookup no-such-name.invalid
+Server:		172.16.89.2
+Address:	172.16.89.2#53
+
+** server can't find no-such-name.invalid: NXDOMAIN
+
+
+### $ nslookup google.com 192.0.2.1
+;; communications error to 192.0.2.1#53: timed out
+;; communications error to 192.0.2.1#53: timed out
+;; communications error to 192.0.2.1#53: timed out
+;; no servers could be reached
+
+
+### $ ping -c 4 172.16.89.2
+PING 172.16.89.2 (172.16.89.2) 56(84) bytes of data.
+64 bytes from 172.16.89.2: icmp_seq=1 ttl=128 time=0.528 ms
+64 bytes from 172.16.89.2: icmp_seq=2 ttl=128 time=0.484 ms
+64 bytes from 172.16.89.2: icmp_seq=3 ttl=128 time=0.487 ms
+64 bytes from 172.16.89.2: icmp_seq=4 ttl=128 time=0.347 ms
+
+--- 172.16.89.2 ping statistics ---
+4 packets transmitted, 4 received, 0% packet loss, time 3090ms
+rtt min/avg/max/mdev = 0.347/0.461/0.528/0.068 ms
+
+### $ ping -c 4 8.8.8.8
+PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
+64 bytes from 8.8.8.8: icmp_seq=1 ttl=128 time=132 ms
+64 bytes from 8.8.8.8: icmp_seq=2 ttl=128 time=52.8 ms
+64 bytes from 8.8.8.8: icmp_seq=3 ttl=128 time=52.3 ms
+64 bytes from 8.8.8.8: icmp_seq=4 ttl=128 time=50.3 ms
+
+--- 8.8.8.8 ping statistics ---
+4 packets transmitted, 4 received, 0% packet loss, time 3005ms
+rtt min/avg/max/mdev = 50.266/71.826/131.910/34.702 ms
+
+### $ ping -c 4 -W 1 172.16.89.1
+PING 172.16.89.1 (172.16.89.1) 56(84) bytes of data.
+
+--- 172.16.89.1 ping statistics ---
+4 packets transmitted, 0 received, 100% packet loss, time 3088ms
+
+
+### $ ping -c 4 -W 1 192.0.2.1
+PING 192.0.2.1 (192.0.2.1) 56(84) bytes of data.
+
+--- 192.0.2.1 ping statistics ---
+4 packets transmitted, 0 received, 100% packet loss, time 3085ms
+
+
+### $ ss -lnt
+State  Recv-Q Send-Q Local Address:Port Peer Address:Port
+LISTEN 0      128          0.0.0.0:22        0.0.0.0:*
+LISTEN 0      4096       127.0.0.1:631       0.0.0.0:*
+LISTEN 0      128             [::]:22           [::]:*
+LISTEN 0      4096           [::1]:631          [::]:*
+LISTEN 0      4096               *:9090            *:*
+
+### $ nc -vz -w 3 172.16.89.128 22
+Ncat: Version 7.92 ( https://nmap.org/ncat )
+Ncat: Connected to 172.16.89.128:22.
+Ncat: 0 bytes sent, 0 bytes received in 0.01 seconds.
+
+### $ nc -vz -w 3 172.16.89.128 443
+Ncat: Version 7.92 ( https://nmap.org/ncat )
+Ncat: Connection refused.
+
+### $ nc -vz -w 3 192.0.2.1 22
+Ncat: Version 7.92 ( https://nmap.org/ncat )
+Ncat: TIMEOUT.
+
+### $ traceroute -n 172.16.89.2
+traceroute to 172.16.89.2 (172.16.89.2), 30 hops max, 60 byte packets
+ 1  * * *
+ 2  * * *
+ 3  * * *
+ 4  * * *
+ 5  * * *
+ 6  * * *
+ 7  * * *
+ 8  * * *
+ 9  * * *
+10  * * *
+11  * * *
+12  * * *
+13  * * *
+14  * * *
+15  * * *
+16  * * *
+17  * * *
+18  * * *
+19  * * *
+20  * * *
+21  * * *
+22  * * *
+23  * * *
+24  * * *
+25  * * *
+26  * * *
+27  * * *
+28  * * *
+29  * * *
+30  * * *
+
+### $ traceroute -n -w 2 8.8.8.8
+traceroute to 8.8.8.8 (8.8.8.8), 30 hops max, 60 byte packets
+ 1  172.16.89.2  0.581 ms  0.236 ms  0.086 ms
+ 2  * * *
+ 3  * * *
+ 4  * * *
+ 5  * * *
+ 6  * * *
+ 7  * * *
+ 8  * * *
+ 9  * * *
+10  * * *
+11  * * *
+12  * * *
+13  * * *
+14  * * *
+15  * * *
+16  * * *
+17  * * *
+18  * * *
+19  * * *
+20  * * *
+21  * * *
+22  * * *
+23  * * *
+24  * * *
+25  * * *
+26  * * *
+27  * * *
+28  * * *
+29  * * *
+30  * * *
+

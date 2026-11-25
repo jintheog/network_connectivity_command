@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>출력 분석 엔진 테스트</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 24px; max-width: 980px; }
+    pre { background: #f4f4f4; padding: 12px; white-space: pre-wrap; }
+    .pass { color: #176b2c; } .fail { color: #b3261e; font-weight: 600; }
+  </style>
+  <script src="analyzer.js"></script>
+  <script src="tests/cases.js"></script>
+</head>
+<body>
+  <h1>출력 분석 엔진 테스트</h1>
+  <p>node가 없을 때 쓰는 테스트 페이지다. 이 파일을 더블클릭해 연다. 샘플 파일을 자동으로 읽지 못하면 아래에서 <code>samples/samples-linux.txt</code>와 <code>samples/windows.txt</code>를 함께 고른다.</p>
+  <p><input id="files" type="file" multiple accept=".txt"></p>
+  <p id="summary">테스트 준비 중…</p>
+  <pre id="out"></pre>
+  <script>
+  (function () {
+    function show(texts) {
+      var r = AnalyzerTests.runCases(NetAnalyzer, texts);
+      var out = document.getElementById('out');
+      out.innerHTML = '';
+      r.results.forEach(function (x) {
+        var line = document.createElement('div');
+        line.className = x.ok ? 'pass' : 'fail';
+        line.textContent = (x.ok ? 'PASS ' : 'FAIL ') + x.name + x.errors.map(function (e) { return '\n     - ' + e; }).join('');
+        out.appendChild(line);
+      });
+      var s = r.passed + ' / ' + r.total + ' 통과';
+      document.getElementById('summary').textContent = s;
+      document.title = (r.failed ? 'FAIL ' : 'PASS ') + s;
+    }
+    function load(name, done) {
+      var x = new XMLHttpRequest();
+      x.open('GET', 'samples/' + name);
+      x.overrideMimeType('text/plain; charset=utf-8');
+      x.onload = function () { done(x.status === 0 || x.status === 200 ? x.responseText : null); };
+      x.onerror = function () { done(null); };
+      try { x.send(); } catch (e) { done(null); }
+    }
+    load('samples-linux.txt', function (linux) {
+      load('windows.txt', function (win) {
+        if (linux && win) show({ linux: linux, win: win });
+        else document.getElementById('summary').textContent = '브라우저 보안 설정 때문에 샘플 파일을 자동으로 읽지 못했다. 위에서 두 샘플 파일을 고른다.';
+      });
+    });
+    document.getElementById('files').addEventListener('change', function (e) {
+      var files = Array.prototype.slice.call(e.target.files), texts = {}, left = files.length;
+      files.forEach(function (f) {
+        var fr = new FileReader();
+        fr.onload = function () {
+          if (/windows/i.test(f.name)) texts.win = fr.result; else texts.linux = fr.result;
+          if (--left === 0) {
+            if (texts.linux && texts.win) show(texts);
+            else document.getElementById('summary').textContent = '두 파일(samples-linux.txt, windows.txt)을 함께 고른다.';
+          }
+        };
+        fr.readAsText(f, 'utf-8');
+      });
+    });
+  })();
+  </script>
+</body>
+</html>

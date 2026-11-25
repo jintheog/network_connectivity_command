@@ -1,0 +1,35 @@
+﻿### PS> ping 172.16.89.128
+
+Ping 172.16.89.128 32바이트 데이터 사용:
+172.16.89.128의 응답: 바이트=32 시간<1ms TTL=64
+172.16.89.128의 응답: 바이트=32 시간=1ms TTL=64
+172.16.89.128의 응답: 바이트=32 시간=2ms TTL=64
+172.16.89.128의 응답: 바이트=32 시간=2ms TTL=64
+
+172.16.89.128에 대한 Ping 통계:
+    패킷: 보냄 = 4, 받음 = 4, 손실 = 0 (0% 손실),
+왕복 시간(밀리초):
+    최소 = 0ms, 최대 = 2ms, 평균 = 1ms
+### PS> Test-NetConnection 172.16.89.128 -Port 22
+
+
+ComputerName     : 172.16.89.128
+RemoteAddress    : 172.16.89.128
+RemotePort       : 22
+InterfaceAlias   : VMware Network Adapter VMnet8
+SourceAddress    : 172.16.89.1
+TcpTestSucceeded : True
+
+### PS> Test-NetConnection 172.16.89.128 -Port 443
+TCP connect to (172.16.89.128 : 443) failed
+ComputerName           : 172.16.89.128
+RemoteAddress          : 172.16.89.128
+RemotePort             : 443
+InterfaceAlias         : VMware Network Adapter VMnet8
+SourceAddress          : 172.16.89.1
+PingSucceeded          : True
+PingReplyDetails (RTT) : 1 ms
+TcpTestSucceeded       : False
+
+
+
