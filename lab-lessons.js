@@ -956,6 +956,192 @@
     };
   };
 
+  // ----- 1-7 ss -lnt -----
+  const SAMPLE_SS = 'State  Recv-Q Send-Q Local Address:Port Peer Address:Port\nLISTEN 0      128          0.0.0.0:22        0.0.0.0:*\nLISTEN 0      4096       127.0.0.1:631       0.0.0.0:*\nLISTEN 0      128             [::]:22           [::]:*\nLISTEN 0      4096           [::1]:631          [::]:*\nLISTEN 0      4096               *:9090            *:*';
+  const SS_SCOPE = ['모든 주소에서 받는다 (다른 PC에서도 연결할 수 있다)', '이 VM 안에서만 받는다 (127.0.0.1 또는 [::1])', '이 출력에 22번이 없다'];
+  const ssLoopOnly = res => res.values.ports.filter(p => { const s = analyzer().ssPort(res, p); return s.state === 'listening' && s.scope === 'loopback'; });
+  CARDS['ss'] = {
+    no: '1-7',
+    title: 'ss -lnt — 이 VM이 연결을 기다리는 주소와 포트 찾기',
+    question: '이 VM 안에서 TCP 연결을 기다리는 프로그램은 어떤 주소와 포트에서 기다리는가? 다른 PC에서도 연결할 수 있는 포트와 이 VM 안에서만 받는 포트는 무엇인가?',
+    place: 'ssh-vm',
+    command: () => 'ss -lnt',
+    lead: '1-1과 같은 창(SSH로 VM에 접속한 PowerShell 창)에서 <code>ss -lnt</code>를 입력하고 Enter를 누른다.',
+    parts: [
+      ['ss', 'socket statistics의 줄임말이다. 소켓을 보여준다. 소켓은 프로그램이 네트워크로 주고받기 위해 여는 통로다. 주소와 포트 번호로 구분한다. 포트는 한 장비 안에서 어느 프로그램에게 가는 연결인지 나누는 번호다(예: SSH는 보통 22).'],
+      ['-l', 'listening의 l이다. 연결을 기다리는(LISTEN) 소켓만 보여준다. 이 옵션이 없으면 기다리는 소켓은 빠진다.'],
+      ['-n', 'numeric의 n이다. 포트를 ssh 같은 서비스 이름으로 바꾸지 않고 22 같은 숫자 그대로 보여준다.'],
+      ['-t', 'tcp의 t다. TCP 소켓만 보여준다. TCP는 연결을 먼저 맺은 뒤 주고받는 방식이고, SSH와 웹(HTTPS)이 이 방식을 쓴다.'],
+    ],
+    values: () => '바꿀 값이 없다. 그대로 입력한다. <code>-lnt</code>는 <code>-l -n -t</code> 세 옵션을 한데 붙여 쓴 것이다.',
+    ends: '결과를 보여주고 바로 끝난다. 프롬프트가 다시 나타나면 끝난 것이다.',
+    copy: {
+      from: '<code>State</code>로 시작하는 제목 줄.',
+      to: '마지막 <code>LISTEN</code> 줄. 작성자의 VM에서는 <code>*:9090</code>이 있는 줄이 마지막이었다. 줄 수는 VM마다 다르므로 빠짐없이 모두 복사한다.',
+      extra: '제목 줄이나 마지막 줄이 빠지면 앱은 \'일부 누락 의심\'으로 표시하고, 목록에 없는 포트를 "기다리지 않는다"고 단정하지 않는다.',
+      fail: '<code>ss: command not found</code>가 나오면 그 줄을 복사한다.',
+    },
+    pasteLabel: '내 Linux 출력',
+    expect: 'ss',
+    gradeOn: ['partial'],
+    example: {
+      shown: [{ text: SAMPLE_SS }],
+      output: '[jin@localhost ~]$ ss -lnt\n' + SAMPLE_SS,
+      shownNote: '아래는 작성자의 VM에서 실제로 나온 출력이다. 내 VM에서 기다리는 포트는 다를 수 있다.',
+      note: '아래 출력은 예시다. 내 VM에서 기다리는 포트는 다를 수 있다.',
+    },
+    reading: [
+      '제목 줄 아래 한 줄이 연결을 기다리는 소켓 하나다. <code>State</code>의 <code>LISTEN</code>은 연결을 기다리는 중이라는 뜻이다. <code>Recv-Q</code>와 <code>Send-Q</code>는 이 실습에서 읽지 않는다.',
+      '<code>Local Address:Port</code>가 이 VM에서 기다리는 주소와 포트다. 마지막 콜론(:) 뒤가 포트 번호다. <code>Peer Address:Port</code>는 연결해 올 상대인데, 아직 정해지지 않아 <code>*</code>로 나온다.',
+      '<code>0.0.0.0:22</code>: 0.0.0.0은 이 VM의 모든 IPv4 주소라는 뜻이다. 그래서 다른 PC에서 이 VM의 주소(예: 172.16.89.128)로 22번에 연결해 와도 받는다. 22번은 SSH 접속을 받는 sshd가 기다리는 포트다. 0-4에서 SSH로 접속할 수 있었던 이유다.',
+      '<code>127.0.0.1:631</code>: 127.0.0.1은 이 VM 자기 자신을 가리키는 주소(loopback)다. 이 포트는 이 VM 안에서 온 연결만 받고, 다른 PC의 연결은 받지 않는다. 631은 인쇄 서비스(CUPS)가 쓰는 포트다.',
+      '<code>[::]:22</code>와 <code>[::1]:631</code>: 대괄호 안은 IPv6 주소다. <code>[::]</code>는 모든 IPv6 주소, <code>[::1]</code>은 IPv6의 자기 자신 주소다. 앞의 두 줄과 같은 내용을 IPv6로도 기다린다는 뜻이다.',
+      '<code>*:9090</code>: <code>*</code>는 IPv4와 IPv6의 모든 주소에서 기다린다는 뜻이다. 9090은 0-4에서 SSH로 접속했을 때 <code>Web console: https://...:9090/</code>으로 안내된 웹 관리 화면(Cockpit)의 포트다.',
+    ],
+    questions: [
+      { key: 'ss.ports', label: 'LISTEN 상태로 기다리는 포트 번호를 모두 적는다. (쉼표로 구분, 같은 번호는 한 번만)', placeholder: '예: 22, 631' },
+      { key: 'ss.scope22', label: '22번 포트는 어디에서 오는 연결을 받는가?', choices: SS_SCOPE },
+      { key: 'ss.loop', label: '이 VM 안에서만(127.0.0.1 또는 [::1]) 기다리는 포트 번호는 무엇인가? 없으면 "없음"이라고 적는다.', placeholder: '포트 번호 또는 없음' },
+    ],
+    fixes: [
+      ['partial', '제목 줄(<code>State ...</code>)이 없거나 마지막 줄이 잘렸다: 출력 일부만 붙여 넣은 것이다. 목록에 없는 포트를 "기다리지 않는다"고 단정하지 않는다. 제목 줄부터 마지막 LISTEN 줄까지 다시 복사한다.'],
+      ['no22', 'LISTEN 줄에 22번이 없다: 이 VM에서 SSH 접속을 받는 프로그램(sshd)이 연결을 기다리지 않는다. 0-4에서 <code>Connection refused</code>가 나왔다면 이 때문이다. VM 터미널에서 <code>sudo systemctl enable --now sshd</code>로 켠다.'],
+      ['loop', '<code>127.0.0.1:포트</code>나 <code>[::1]:포트</code>로만 기다리는 포트가 있다: 그 포트는 이 VM 안에서 온 연결만 받는다. 다른 PC에서 그 포트로 연결하면 거절된다.'],
+    ],
+    fixFor: res => (res.status === 'partial' ? 'partial' : res.status !== 'ok' ? null
+      : analyzer().ssPort(res, '22').state === 'not-listening' ? 'no22' : ssLoopOnly(res).length ? 'loop' : null),
+    next: 'nc',
+  };
+  RULES['ss.ports'] = res => {
+    if (res.status !== 'ok') return { skip: '출력 일부가 빠졌을 수 있어 포트 목록을 채점하지 않는다. 목록에 없는 포트가 없다고 단정하지 않는다.' };
+    const ports = res.values.ports;
+    if (!ports.length) return { skip: 'LISTEN 줄이 없어 채점하지 않는다.' };
+    return {
+      type: 'set', accept: [ports.join(',')], show: ports.join(', '), lines: res.values.listeners.map(x => x.line),
+      explain: '각 LISTEN 줄의 Local Address:Port에서 마지막 콜론 뒤 숫자가 포트다. IPv4 줄과 IPv6 줄에 같은 포트가 두 번 나오면 한 번만 센다.',
+    };
+  };
+  RULES['ss.scope22'] = res => {
+    const s = analyzer().ssPort(res, '22');
+    if (s.state === 'unknown') return { skip: s.reason };
+    const show = s.state === 'not-listening' ? SS_SCOPE[2] : s.scope === 'loopback' ? SS_SCOPE[1] : SS_SCOPE[0];
+    return {
+      type: 'choice', accept: [show], show, lines: s.lines,
+      explain: s.state === 'not-listening' ? '제목 줄부터 끝까지 있는 출력에 22번 LISTEN 줄이 없다.'
+        : s.scope === 'loopback' ? s.reason
+        : '22번을 ' + s.addresses.join(', ') + '에서 기다린다. 0.0.0.0, [::], *는 "이 VM의 모든 주소"라는 뜻이라 다른 PC에서 오는 연결도 받는다.',
+    };
+  };
+  RULES['ss.loop'] = res => {
+    if (res.status !== 'ok') return { skip: '출력 일부가 빠졌을 수 있어 채점하지 않는다.' };
+    const loop = ssLoopOnly(res);
+    return {
+      type: 'set', accept: loop.length ? [loop.join(',')] : ['없음', '없다', 'none', '-'], show: loop.length ? loop.join(', ') : '없음',
+      lines: loop.length ? [].concat.apply([], loop.map(p => analyzer().ssPort(res, p).lines)) : res.values.listeners.map(x => x.line),
+      explain: loop.length ? '127.0.0.1이나 [::1]은 이 VM 자기 자신의 주소다. 이 주소로만 기다리는 포트는 이 VM 안에서 온 연결만 받는다. 같은 포트를 0.0.0.0이나 *로도 기다리면 여기에 넣지 않는다.'
+        : '모든 포트가 0.0.0.0, [::], * 같은 "모든 주소"에서 기다린다. 이 VM 안에서만 받는 포트는 없다.',
+    };
+  };
+
+  // ----- 1-8 nc -vz -w 3 -----
+  const SAMPLE_NC_OK = 'Ncat: Version 7.92 ( https://nmap.org/ncat )\nNcat: Connected to 172.16.89.128:22.\nNcat: 0 bytes sent, 0 bytes received in 0.01 seconds.';
+  const SAMPLE_NC_RF = 'Ncat: Version 7.92 ( https://nmap.org/ncat )\nNcat: Connection refused.';
+  const SAMPLE_NC_TO = 'Ncat: Version 7.92 ( https://nmap.org/ncat )\nNcat: TIMEOUT.';
+  const NC_RESULTS = ['Connected (연결 성공)', 'Connection refused. (거절 응답)', 'TIMEOUT. (응답 없음)'];
+  const NC_WHERE = ['VM 안에서 VM 자신의 주소로 (VM 내부에서 실행한 검사)', 'VM 안에서 다른 장비로', 'Windows PC에서 VM으로'];
+  const selfTarget = (t, env) => !!t && (t === env.ipv4 || /^127\./.test(t) || t === 'localhost' || t === '::1');
+  CARDS['nc'] = {
+    no: '1-8',
+    title: 'nc -vz -w 3 — 지정한 TCP 포트로 연결해 보기',
+    question: '이 VM에서 지정한 주소의 TCP 포트로 연결하면 연결 성공, 거절 응답, 응답 없음 가운데 무엇이 나오는가?',
+    place: 'ssh-vm',
+    commands: env => [
+      { label: '이 VM 자신의 22번(SSH) 포트', cmd: 'nc -vz -w 3 ' + val(env.ipv4, 'VM주소') + ' 22' },
+      { label: '이 VM 자신의 443번(HTTPS) 포트', cmd: 'nc -vz -w 3 ' + val(env.ipv4, 'VM주소') + ' 443' },
+      { label: '응답하지 않는 주소의 22번 포트', cmd: 'nc -vz -w 3 192.0.2.1 22' },
+    ],
+    needs: env => (env.ipv4 ? [] : ['VM주소']),
+    lead: '1-1과 같은 창(SSH로 VM에 접속한 PowerShell 창)에서 아래 세 명령을 하나씩 실행한다.',
+    parts: [
+      ['nc', '지정한 주소와 포트로 TCP 연결을 맺어 보는 명령이다. CentOS Stream의 nc는 Ncat이라는 프로그램이고, 0-3에서 설치한 nmap-ncat 패키지에 들어 있다.'],
+      ['-v', 'verbose(자세히)의 v다. 연결이 됐는지, 왜 안 됐는지를 화면에 알려 준다. 이 옵션이 없으면 결과 줄이 나오지 않는다.'],
+      ['-z', '연결이 되는지만 확인하고 데이터는 주고받지 않는다. 그래서 연결되면 바로 끊고 끝난다.'],
+      ['-w 3', '연결을 기다리는 시간을 3초로 정한다. 3초 안에 연결되지 않으면 포기하고 끝난다.'],
+      ['대상 IP와 포트', '연결할 장비의 주소와 포트 번호다. (1)(2)는 이 VM 자신의 주소, (3)의 192.0.2.1은 문서와 예제에 쓰도록 떼어 둔 주소라 응답하는 장비가 없다.'],
+    ],
+    values: env => env.ipv4
+      ? '(1)(2)의 <code>' + env.ipv4 + '</code>는 0-2에서 저장한 내 VM의 IP다. 자동으로 채웠다.'
+      : '(1)(2)의 <code>VM주소</code>는 0-2나 1-1에서 확인한 내 VM의 IPv4 주소로 바꾼다. 저장하면 자동으로 채워진다.',
+    ends: '연결되거나 거절되면 바로 끝난다. 응답이 없으면 <code>-w 3</code>으로 정한 3초를 기다린 뒤 <code>TIMEOUT.</code>을 출력하고 끝난다.',
+    copy: {
+      from: '<code>Ncat: Version</code>으로 시작하는 첫 줄.',
+      to: '마지막 <code>Ncat:</code> 줄. 연결되면 <code>... bytes received in ... seconds.</code> 줄, 실패하면 <code>Connection refused.</code>나 <code>TIMEOUT.</code> 줄이다.',
+      extra: '명령 하나의 출력만 붙여 넣는다. 명령 줄까지 함께 복사하면 어느 주소와 포트를 검사했는지 앱이 더 확실히 안다.',
+      fail: '<code>nc: command not found</code>가 나오면 그 줄을 복사한다.',
+    },
+    pasteLabel: '내 Linux 출력',
+    expect: 'nc',
+    gradeOn: ['fail'],
+    example: {
+      shown: [{ label: '(1) <code>nc -vz -w 3 172.16.89.128 22</code>', text: SAMPLE_NC_OK }, { label: '(2) <code>nc -vz -w 3 172.16.89.128 443</code>', text: SAMPLE_NC_RF }, { label: '(3) <code>nc -vz -w 3 192.0.2.1 22</code>', text: SAMPLE_NC_TO }],
+      output: '[jin@localhost ~]$ nc -vz -w 3 192.168.10.130 443\n' + SAMPLE_NC_RF,
+      note: '아래 값(192.168.10.130)은 예시다. 내 VM의 값과 다르다.',
+    },
+    reading: [
+      '<code>Ncat: Version 7.92</code>: 프로그램 이름과 버전이다. 이 nc가 Ncat이라는 표시다.',
+      '<code>Ncat: Connected to 172.16.89.128:22.</code>: TCP 연결에 성공했다. 그 포트에서 연결을 기다리는 프로그램이 있다는 뜻이다. <code>-z</code>라서 연결만 확인하고 바로 끊었기 때문에 다음 줄이 <code>0 bytes sent, 0 bytes received</code>다. SSH 로그인까지 된다는 뜻은 아니다.',
+      '<code>Ncat: Connection refused.</code>: 상대 장비까지는 닿았고, "그 포트에서 기다리는 프로그램이 없다"는 거절 응답이 돌아왔다. 0-4의 ssh에서 본 <code>Connection refused</code>와 같은 상황이다. 1-7의 <code>ss -lnt</code>에 443번 LISTEN 줄이 없던 것과 맞는다.',
+      '<code>Ncat: TIMEOUT.</code>: <code>-w 3</code>으로 정한 3초 안에 아무 응답도 받지 못했다. 상대가 꺼졌거나, 중간에서 막혔거나, 주소가 틀렸을 수 있다. 0-4의 ssh에서 본 <code>Connection timed out</code>과 같은 상황이다.',
+      '거절 응답은 "상대 장비까지는 닿았다"는 증거다. 응답 없음은 어디까지 닿았는지 알 수 없다는 뜻이다.',
+      '(1)(2)는 VM 안에서 VM 자신의 주소로 연결해 본 <b>VM 내부에서 실행한 검사</b>다. Windows PC에서 VM까지 연결되는지는 이것으로 알 수 없다. 그것은 1-9의 Test-NetConnection으로 검사한다.',
+    ],
+    questions: [
+      { key: 'nc.result', label: '이 검사의 결과는 무엇인가?', choices: NC_RESULTS },
+      { key: 'nc.port', label: '검사한 포트 번호는 무엇인가?', placeholder: '숫자' },
+      { key: 'nc.where', label: '이 검사는 어디에서 어디로 연결해 본 것인가?', choices: NC_WHERE },
+    ],
+    fixes: [
+      ['refused', '<code>Ncat: Connection refused.</code>: 상대까지 닿았지만 그 포트에서 기다리는 프로그램이 없다. 상대 장비에서 1-7의 <code>ss -lnt</code>로 그 포트의 LISTEN 줄이 있는지 확인한다.'],
+      ['timeout', '<code>Ncat: TIMEOUT.</code>: 3초 안에 아무 응답이 없었다. 주소가 맞는지, 상대가 켜져 있는지 확인한다. 방화벽이 연결을 조용히 버리는 경우에도 이렇게 나온다.'],
+      ['noroute', '<code>Ncat: No route to host.</code>: 그 주소로 가는 길이 없다는 알림을 받았다. 주소가 맞는지, 1-3의 경로가 맞는지 확인한다.'],
+      ['notfound', '<code>nc: command not found</code>: 이 명령을 실행할 도구가 없다. 0-3의 <code>sudo dnf install -y nmap-ncat</code>으로 설치하거나, 이 카드를 \'예시로 연습\'으로 진행한다.'],
+    ],
+    fixFor: res => (res.status === 'notfound' ? 'notfound' : { refused: 'refused', timeout: 'timeout', 'no-route': 'noroute' }[res.outcome] || null),
+    readNote: (res, env) => (res.values && selfTarget(res.values.target, env)
+      ? 'VM 내부에서 실행한 검사: 이 VM이 자기 자신의 주소(' + res.values.target + ')로 연결해 본 결과다. Windows PC에서 VM까지 연결되는지는 1-9의 Test-NetConnection으로 검사한다.' : null),
+    next: 'tnc',
+  };
+  RULES['nc.result'] = res => {
+    const o = res.outcome;
+    const show = o === 'connected' ? NC_RESULTS[0] : o === 'refused' ? NC_RESULTS[1] : o === 'timeout' ? NC_RESULTS[2] : null;
+    if (!show) return { skip: '이 결과(' + (o || '알 수 없음') + ')는 세 보기에 없어 채점하지 않는다. 위의 \'이렇게 나오면\'을 본다.' };
+    return {
+      type: 'choice', accept: [show], show, lines: res.evidence.outcome || [],
+      explain: o === 'connected' ? 'Connected to 줄은 TCP 연결에 성공했다는 뜻이다. 그 포트에서 기다리는 프로그램이 있다.'
+        : o === 'refused' ? 'Connection refused.는 상대까지 닿았지만 그 포트에서 기다리는 프로그램이 없어 거절 응답이 돌아왔다는 뜻이다.'
+        : 'TIMEOUT.은 정한 시간(-w 3) 안에 아무 응답도 받지 못했다는 뜻이다. 거절 응답과 달리 상대까지 닿았는지 알 수 없다.',
+    };
+  };
+  RULES['nc.port'] = res => {
+    const p = res.values.port;
+    if (!p) return { skip: '출력에 포트 번호가 없다. 명령 줄까지 함께 복사하면 채점한다.' };
+    return {
+      type: 'number', accept: [String(p)], show: String(p), lines: res.values.outcome === 'connected' ? res.evidence.outcome || [] : [res.command ? '$ ' + res.command : ''].filter(Boolean),
+      explain: res.values.outcome === 'connected' ? 'Connected to 주소:포트 줄에서 마지막 콜론 뒤가 포트 번호다.' : '실패하면 출력에 포트가 나오지 않는다. 명령 줄의 마지막 숫자가 검사한 포트다.',
+    };
+  };
+  RULES['nc.where'] = (res, ctx) => {
+    const t = res.values.target;
+    if (!t) return { skip: '어느 주소를 검사했는지 출력에 없다. 명령 줄까지 함께 복사하면 채점한다.' };
+    const self = selfTarget(t, ctx.env);
+    const show = self ? NC_WHERE[0] : NC_WHERE[1];
+    return {
+      type: 'choice', accept: [show], show, lines: res.evidence.outcome || [],
+      explain: (self ? t + '는 이 VM 자신의 주소다. 그래서 VM 내부에서 실행한 검사다.' : t + '는 이 VM의 주소가 아니다. VM 안에서 다른 장비로 연결해 본 것이다.') +
+        ' nc는 VM 안에서 실행했으므로 Windows PC에서 시작한 연결이 아니다. Windows에서 VM까지는 1-9의 Test-NetConnection으로 검사한다.',
+    };
+  };
+
   // ----- 0단계 확인 질문의 채점 규칙 (붙여 넣은 출력이 있을 때만 쓴다. fixed는 출력 없이도 채점) -----
   const normName = s => String(s || '').replace(/["']/g, '').replace(/\s+/g, ' ').trim();
   RULES['os.pretty'] = res => ({
@@ -1045,6 +1231,12 @@
     { id: 'lab-ping', menu: 'ping -c 4', cards: ['ping'], group: '1단계 · 명령 익히기',
       title: '네 번 중 몇 번 응답을 받았는지 읽기',
       intro: '응답이 기대되는 게이트웨이부터 ping을 보낸다. 응답이 없을 때 그것만으로 장애라고 단정할 수 없는 이유를 함께 본다.' },
+    { id: 'lab-ss', menu: 'ss -lnt', cards: ['ss'], group: '1단계 · 명령 익히기',
+      title: '이 VM이 연결을 기다리는 주소와 포트 찾기',
+      intro: '서버 안에서 어떤 프로그램이 어느 주소와 포트로 연결을 기다리는지 본다. 모든 주소에서 받는 포트와 이 VM 안에서만 받는 포트를 구분한다.' },
+    { id: 'lab-nc', menu: 'nc -vz -w 3', cards: ['nc'], group: '1단계 · 명령 익히기',
+      title: '지정한 TCP 포트로 연결해 보기',
+      intro: 'Linux 클라이언트에서 TCP 포트로 연결을 시도해 연결 성공, 거절 응답, 응답 없음을 구분한다. VM 안에서 자기 주소를 검사한 결과는 VM 내부에서 실행한 검사로 본다.' },
   ]);
 
   root.LabData = { PLACES, CARDS, RULES, PAGES, EXAMPLE_ENV };
