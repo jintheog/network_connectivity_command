@@ -40,8 +40,11 @@
     nc: { label: 'nc (Ncat)', recopy: '"Ncat: Version" 줄부터 마지막 Ncat: 줄까지 복사한다.' },
     traceroute: { label: 'traceroute', recopy: '"traceroute to" 줄부터 마지막 홉 줄(목적지가 나온 줄 또는 마지막 번호 줄)까지 복사한다.' },
     tnc: { label: 'Test-NetConnection', recopy: 'ComputerName 줄부터 TcpTestSucceeded 줄까지 복사한다. 그 위에 경고 줄이 있으면 함께 복사한다.' },
+    // 0단계(실습 환경 준비)
+    'os-release': { label: 'cat /etc/os-release', recopy: 'NAME= 줄부터 마지막 줄까지 복사한다. PRETTY_NAME= 줄이 꼭 들어가야 한다.' },
+    dnf: { label: 'dnf install', recopy: '[sudo] password 줄(또는 첫 저장소 줄)부터 마지막 Complete! 또는 Nothing to do. 줄까지 복사한다. 오류가 나왔다면 Error: 줄까지 복사한다.' },
+    ssh: { label: 'ssh 접속', recopy: 'ssh 명령 줄부터, 접속 뒤 나타난 리눅스 프롬프트 줄(또는 마지막 오류 줄)까지 복사한다.' },
     // 분석 대상은 아니지만 '다른 명령의 출력'을 알아보기 위해 구분하는 종류
-    'os-release': { label: 'cat /etc/os-release', other: true },
     ipconfig: { label: 'ipconfig (Windows)', other: true },
     tracert: { label: 'tracert (Windows)', other: true },
   };
@@ -52,7 +55,7 @@
     traceroute: 'traceroute', nc: 'nmap-ncat', ncat: 'nmap-ncat',
     ss: 'iproute', ip: 'iproute', ping: 'iputils',
   };
-  const TOOL_KIND = { nslookup: 'nslookup', traceroute: 'traceroute', nc: 'nc', ncat: 'nc', ss: 'ss', ip: null, ping: 'ping', 'test-netconnection': 'tnc', tnc: 'tnc' };
+  const TOOL_KIND = { nslookup: 'nslookup', traceroute: 'traceroute', nc: 'nc', ncat: 'nc', ss: 'ss', ip: null, ping: 'ping', 'test-netconnection': 'tnc', tnc: 'tnc', ssh: 'ssh', dnf: 'dnf', yum: 'dnf' };
 
   // ---------- 공통 도구 ----------
   const isV4 = s => /^(?:\d{1,3}\.){3}\d{1,3}$/.test(s) && s.split('.').every(n => +n <= 255);
@@ -85,8 +88,9 @@
     /^PS>\s?(.*)$/,
     /^[$#](?:\s+(.*))?$/,                         // $ 명령, # 명령
   ];
-  const BARE_COMMAND = /^(?:sudo\s+)?(?:ip|nslookup|ping|ss|nc|ncat|traceroute|cat|ssh|dig|tracert|ipconfig)(?:\s|$)|^(?:Test-NetConnection|tnc)(?:\s|$)/i;
-  const BARE_COMMAND_CS = /^(?:sudo\s+)?(?:ip|nslookup|ping|ss|nc|ncat|traceroute|cat|ssh|dig|tracert|ipconfig)(?:\s|$)/;
+  const BARE_COMMAND = /^(?:sudo\s+)?(?:ip|nslookup|ping|ss|nc|ncat|traceroute|cat|ssh|dig|tracert|ipconfig|dnf|yum)(?:\s|$)|^(?:Test-NetConnection|tnc)(?:\s|$)/i;
+  const BARE_COMMAND_CS = /^(?:sudo\s+)?(?:ip|nslookup|ping|ss|nc|ncat|traceroute|cat|ssh|dig|tracert|ipconfig|dnf|yum)(?:\s|$)/;
+  const LINUX_PROMPT = /^\s*(?:\[[^\]\s]+@[^\]]+\][$#]|[\w.-]+@[\w.-]+:[^\s$#]*[$#])/;
 
   function splitLines(text) {
     return String(text == null ? '' : text)
@@ -158,10 +162,11 @@
   function parseCommand(cmd) {
     if (!cmd) return null;
     let t = cmd.trim().split(/\s+/);
-    if (t[0] === 'sudo') t = t.slice(1);
+    const sudo = t[0] === 'sudo';
+    if (sudo) t = t.slice(1);
     const tool = t[0] || '';
     const args = t.slice(1);
-    const info = { text: cmd.trim(), tool, kind: null };
+    const info = { text: cmd.trim(), tool, kind: null, sudo };
     const low = tool.toLowerCase();
     if (tool === 'ip') {
       const { pos, opts } = positional(args, []);
@@ -195,7 +200,16 @@
       info.kind = 'tnc';
       info.target = opts.ComputerName || opts.computername || pos[0] || null;
       info.port = opts.Port || opts.port || null;
-    } else if (tool === 'cat' && args.some(a => /os-release$/.test(a))) info.kind = 'os-release';
+    } else if (tool === 'cat' && args.some(a => /release/.test(a))) {
+      info.kind = 'os-release'; info.file = args.find(a => /release/.test(a));
+    } else if (tool === 'dnf' || tool === 'yum') {
+      const { pos } = positional(args, ['setopt', 'repo', 'enablerepo', 'disablerepo', 'releasever']);
+      info.kind = 'dnf'; info.action = pos[0] || null; info.packages = pos.slice(1);
+    } else if (low === 'ssh') {
+      const { pos, opts } = positional(args, ['p', 'l', 'i', 'o', 'F', 'J', 'b', 'c', 'm', 'E']);
+      const m = /^(?:([^@\s]+)@)?(\S+)$/.exec(pos[0] || '');
+      info.kind = 'ssh'; info.user = m ? m[1] || opts.l || null : null; info.host = m ? m[2] : null; info.port = opts.p || null;
+    }
     else if (low === 'ipconfig') info.kind = 'ipconfig';
     else if (low === 'tracert') info.kind = 'tracert';
     return info;
@@ -228,6 +242,8 @@
   // ---------- 출력 모양으로 명령 알아보기 ----------
   const DETECT = [
     ['tnc', /^\s*(TcpTestSucceeded|ComputerName|RemoteAddress|PingSucceeded|RemotePort)\s*:/],
+    ['ssh', /^ssh: |^\S+@\S+'s password:|^The authenticity of host |^Are you sure you want to continue connecting|^Warning: Permanently added |^Permission denied, please try again|^\S+@\S+: Permission denied \(|^Host key verification failed|^Last login: /],
+    ['dnf', /^(Dependencies resolved\.|Nothing to do\.|Complete!$|Last metadata expiration check|Package \S+ is already installed|No match for argument: |Error: Unable to find a match|Error: Failed to download metadata|Cannot download repomd\.xml|Transaction Summary$|Installing:$|Installed:$|Error: This command has to be run with superuser privileges)|is not in the sudoers file|^Sorry, try again\.|^\[sudo\] password for |incorrect password attempts?$/],
     ['nc', /^Ncat: |^Connection to \S+ \S+ port \[|^nc: connect to /],
     ['tracert', /^(\S+(으)?로 가는 경로 추적|Tracing route to |최대 \d+홉 이상의)/],
     ['ipconfig', /Windows IP (구성|Configuration)|IPv4 (주소|Address)[ .]*:/],
@@ -239,7 +255,7 @@
     ['ip-addr', /^\d+:\s+[^:\s]+:\s+<|^\s*inet6?\s+\S+\/\d+\s.*\bscope\b|^\s*link\/(ether|loopback|none)\b|^Device ".+" does not exist/],
     ['ip-br-addr', /^\S+\s+(UP|DOWN|UNKNOWN|DORMANT|LOWERLAYERDOWN|NOTPRESENT)(\s|$)/],
     ['ip-route', /^(default\s+via\s|default\s+dev\s|\S+\s+(via\s+\S+\s+)?dev\s+\S+)|^RTNETLINK answers:/],
-    ['os-release', /^(NAME|PRETTY_NAME|VERSION_ID|ID_LIKE|ID)=/],
+    ['os-release', /^(NAME|PRETTY_NAME|VERSION_ID|ID_LIKE|ID)=|^cat: \S+: No such file or directory$/],
   ];
 
   function detect(lines) {
@@ -884,7 +900,206 @@
     return r;
   }
 
+  // ---------- cat /etc/os-release ----------
+  // 이름 한 줄(PRETTY_NAME 등)로 이 교재에서 쓸 수 있는 OS인지 나눈다. 학습자가 눈으로 보고 적은 답에도 쓴다.
+  //   supported: CentOS Stream 9·10, Rocky Linux·AlmaLinux·RHEL 9·10
+  //   eol:       CentOS Linux 7·8, CentOS Stream 8 (지원 종료)
+  //   unlisted:  RHEL 계열이지만 원고 목록에 없는 버전(예: Rocky Linux 8)
+  //   other:     RHEL 계열이 아님 / 알아볼 수 없음
+  function classifyOs(text) {
+    const s = String(text == null ? '' : text).replace(/["']/g, ' ').replace(/\s+/g, ' ').trim();
+    let m, family = null, major = null;
+    if ((m = /CentOS\s*Stream\s*(\d+)/i.exec(s))) { family = 'CentOS Stream'; major = +m[1]; }
+    else if ((m = /CentOS(?:\s*Linux)?\s*(\d+)/i.exec(s))) { family = 'CentOS Linux'; major = +m[1]; }
+    else if ((m = /Rocky\s*(?:Linux)?\s*(\d+)/i.exec(s))) { family = 'Rocky Linux'; major = +m[1]; }
+    else if ((m = /Alma\s*Linux\s*(\d+)/i.exec(s))) { family = 'AlmaLinux'; major = +m[1]; }
+    else if ((m = /Red\s*Hat\s*Enterprise\s*Linux\s*(?:release\s*)?(\d+)/i.exec(s))) { family = 'Red Hat Enterprise Linux'; major = +m[1]; }
+    let support = 'other';
+    if (family === 'CentOS Linux') support = 'eol';
+    else if (family === 'CentOS Stream') support = major >= 9 ? 'supported' : 'eol';
+    else if (family) support = major >= 9 ? 'supported' : 'unlisted';
+    return { family, major, support };
+  }
+
+  function parseOsRelease(lines, cmd) {
+    const r = newRes();
+    const f = {};
+    nonEmpty(lines).forEach(l => {
+      const t = l.trim();
+      let m;
+      if ((m = /^([A-Z][A-Z0-9_]*)=(.*)$/.exec(t))) {
+        f[m[1]] = m[2].replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
+        ev(r, 'field:' + m[1], l); return;
+      }
+      if ((m = /^cat: (\S+): No such file or directory$/.exec(t))) {
+        r.status = 'fail'; r.outcome = 'no-file'; ev(r, 'error', l);
+        r.message = '"' + m[1] + '" 파일을 찾지 못했다(No such file or directory). 파일 이름의 철자를 확인한다. os-release는 하이픈(-)으로 이어진 한 단어다.';
+        r.values.file = m[1];
+        return;
+      }
+      r.unparsed.push(l);
+    });
+    if (r.status === 'fail') return r;
+    const v = { name: f.NAME || null, version: f.VERSION || null, id: f.ID || null, idLike: f.ID_LIKE || null, versionId: f.VERSION_ID || null, prettyName: f.PRETTY_NAME || null, fields: f };
+    const c = classifyOs(v.prettyName || ((v.name || '') + ' ' + (v.versionId || '')));
+    Object.assign(v, c, { rhelLike: /\brhel\b/.test(v.idLike || '') || /^(rhel|centos|rocky|almalinux)$/.test(v.id || '') });
+    r.values = v;
+    if (v.prettyName) ev(r, 'prettyName', r.evidence['field:PRETTY_NAME'][0]);
+    if (!Object.keys(f).length) {
+      r.status = 'unknown'; r.message = 'NAME=, PRETTY_NAME= 같은 줄이 없다.';
+    } else if (!v.prettyName) {
+      r.status = 'partial'; r.message = 'PRETTY_NAME= 줄이 없다. 확인 질문의 답이 이 줄에 있으므로 파일 내용 전체를 복사한다.';
+    } else {
+      r.outcome = c.support;
+      r.message = '이 VM의 OS는 ' + v.prettyName + '이다.' + (v.rhelLike ? ' ID_LIKE로 보아 RHEL 계열이다.' : '');
+    }
+    return r;
+  }
+
+  // ---------- sudo dnf install ----------
+  // "bind-utils-32:9.18.33-31.el10.x86_64" → "bind-utils"
+  function nevraName(s) {
+    const m = /^(.+)-(?:\d+:)?[^-]+-[^-]+\.[^.]+$/.exec(s);
+    return m ? m[1] : s;
+  }
+  function parseDnf(lines, cmd) {
+    const r = newRes();
+    const v = {
+      requested: (cmd && cmd.packages) || [], sudo: cmd ? cmd.sudo : null,
+      already: [], installing: [], installed: [], noMatch: [],
+      complete: false, nothingToDo: false, gpgImported: false, sudoPrompt: false, wrongPassword: 0,
+      passwordGaveUp: false, notSudoer: false, repoFail: false, needRoot: false,
+    };
+    let section = null;
+    nonEmpty(lines).forEach(l => {
+      const t = l.trim();
+      let m;
+      if (/^\[sudo\] password for \S+:/.test(t)) { v.sudoPrompt = true; return; }
+      if (/^Sorry, try again\.?$/.test(t)) { v.wrongPassword++; ev(r, 'error', l); return; }
+      if (/incorrect password attempts?$/.test(t)) { v.passwordGaveUp = true; ev(r, 'error', l); return; }
+      if (/is not in the sudoers file/.test(t)) { v.notSudoer = true; ev(r, 'error', l); return; }
+      if (/^Error: This command has to be run with superuser privileges/.test(t)) { v.needRoot = true; ev(r, 'error', l); return; }
+      if (/^(Error: )?Failed to download metadata|Cannot download repomd\.xml|^Curl error|^Errors during downloading metadata/.test(t)) { v.repoFail = true; ev(r, 'error', l); return; }
+      if ((m = /^No match for argument: (\S+)/.exec(t))) { v.noMatch.push(m[1]); ev(r, 'error', l); return; }
+      if (/^Error: Unable to find a match/.test(t)) {
+        ev(r, 'error', l);
+        (/: (.+)$/.exec(t.replace(/^Error: /, '')) || ['', ''])[1].split(/\s+/).filter(Boolean).forEach(p => { if (v.noMatch.indexOf(p) < 0) v.noMatch.push(p); });
+        return;
+      }
+      if ((m = /^Package (\S+) is already installed\.?$/.exec(t))) { const n = nevraName(m[1]); v.already.push(n); ev(r, 'already', l); ev(r, 'pkg:' + n, l); return; }
+      if (/^Nothing to do\.?$/.test(t)) { v.nothingToDo = true; ev(r, 'end', l); return; }
+      if (/^Complete!$/.test(t)) { v.complete = true; ev(r, 'end', l); return; }
+      if (/^Importing GPG key|^Key imported successfully/.test(t)) { v.gpgImported = true; ev(r, 'gpg', l); return; }
+      if (/^Installing:$/.test(t)) { section = 'installing'; return; }
+      if (/^Installed:$/.test(t)) { section = 'installed'; return; }
+      if (/^(Installing dependencies|Installing weak dependencies|Upgrading|Transaction Summary|Removing|Downgrading)/.test(t)) { section = null; return; }
+      if (section === 'installing' && /^\s/.test(l) && (m = /^(\S+)\s+\S+\s+\S+\s+\S+\s+[\d.]+\s*[kMG]?$/.exec(t))) {
+        v.installing.push(m[1]); ev(r, 'installing', l); ev(r, 'pkg:' + m[1], l); return;
+      }
+      if (section === 'installed' && /^\s/.test(l)) {
+        t.split(/\s+/).forEach(tok => { const n = nevraName(tok); v.installed.push(n); ev(r, 'pkg:' + n, l); });
+        ev(r, 'installed', l); return;
+      }
+      if (/^=+$|^-+$|^Package\s+Arch|^Dependencies resolved|^Last metadata|^Downloading Packages|^Running transaction|^Transaction (check|test) succeeded|^Preparing|^Installing\s+:|^Running scriptlet|^Verifying|^Total|^Install\s+\d+ Package|^Installed size|^Total download size|^Userid|^Fingerprint|^From\s+:|^\S.* \|\s+[\d.]+\s*[kMG]?B\s+\d\d:\d\d|^\S+\.rpm\s/.test(t)) return;
+      r.unparsed.push(l);
+    });
+    // 요청한 패키지마다: 새로 설치됨 / 이미 설치되어 있었음 / 알 수 없음
+    const newly = v.installed.length ? v.installed : v.installing;
+    v.packages = {};
+    v.requested.forEach(p => {
+      v.packages[p] = newly.indexOf(p) >= 0 ? 'new' : v.already.indexOf(p) >= 0 || v.nothingToDo ? 'already' : 'unknown';
+    });
+    v.newly = newly;
+    r.values = v;
+    const done = v.complete || v.nothingToDo;
+    if (v.notSudoer) { r.status = 'fail'; r.outcome = 'not-sudoer'; r.message = '이 계정은 sudoers 파일에 없어 관리자 권한으로 실행할 수 없다. 관리자 권한이 있는 계정이나 root로 로그인해 설치한다.'; }
+    else if (v.passwordGaveUp || (v.wrongPassword && !done && !v.repoFail && !v.noMatch.length)) { r.status = 'fail'; r.outcome = 'wrong-password'; r.message = 'sudo 비밀번호가 틀렸다(Sorry, try again.). 로그인할 때 쓴 내 계정 비밀번호를 다시 입력한다.'; }
+    else if (v.needRoot) { r.status = 'fail'; r.outcome = 'need-root'; r.message = 'dnf install은 관리자 권한이 필요하다. 명령 앞에 sudo를 붙여 다시 실행한다.'; }
+    else if (v.repoFail && !done) { r.status = 'fail'; r.outcome = 'repo'; r.message = '패키지 저장소에 접속하지 못했다. 0-2의 인터넷 연결과 이름 조회를 다시 확인한다. 지원이 끝난 버전에서도 이 오류가 난다.'; }
+    else if (v.noMatch.length && !v.complete) { r.status = 'fail'; r.outcome = 'no-match'; r.message = '"' + v.noMatch.join(', ') + '"라는 패키지를 찾지 못했다(Unable to find a match). 패키지 이름의 철자를 확인한다.'; }
+    else if (done) {
+      r.outcome = v.nothingToDo ? 'nothing' : 'complete';
+      r.message = v.nothingToDo ? '요청한 패키지가 모두 이미 설치되어 있다(Nothing to do.).'
+        : '설치가 끝났다(Complete!).' + (newly.length ? ' 새로 설치: ' + newly.join(', ') + '.' : '') + (v.already.length ? ' 이미 설치되어 있던 것: ' + v.already.join(', ') + '.' : '');
+      if (v.wrongPassword) r.notes.push('비밀번호를 한 번 틀렸지만(Sorry, try again.) 다시 입력해 설치를 마쳤다.');
+      if (v.gpgImported) r.notes.push('Importing GPG key ... Key imported successfully는 처음 설치할 때 한 번 나오는 정상 메시지다.');
+    } else {
+      r.status = 'partial';
+      r.message = '마지막의 Complete! 또는 Nothing to do. 줄이 없다. 설치가 끝났는지 이 출력만으로는 알 수 없다.';
+    }
+    return r;
+  }
+
+  // ---------- ssh 접속 ----------
+  // extra.promptsAfter: 이 명령 뒤에 나타난 프롬프트 줄들. 리눅스 프롬프트가 있으면 접속에 성공한 것이다.
+  function parseSsh(lines, cmd, extra) {
+    const r = newRes();
+    const v = {
+      user: cmd && cmd.user || null, host: cmd && cmd.host || null,
+      hostKeyQuestion: false, hostKeyAnswer: null, keyAdded: false, passwordPrompts: 0, denied: 0, deniedFinal: false,
+      connectError: null, resolveFail: null, hostKeyFailed: false, lastLogin: false, linuxPrompt: null,
+    };
+    nonEmpty(lines).forEach(l => {
+      const t = l.trim();
+      let m;
+      if (/^The authenticity of host /.test(t)) { v.hostKeyQuestion = true; ev(r, 'hostKey', l); return; }
+      if ((m = /^Are you sure you want to continue connecting[^?]*\?\s*(\S+)?$/.exec(t))) { v.hostKeyQuestion = true; v.hostKeyAnswer = m[1] || null; ev(r, 'hostKey', l); return; }
+      if (/^(ED25519|ECDSA|RSA) key fingerprint is |^This key is not known by any other names/.test(t)) return;
+      if (/^Warning: Permanently added /.test(t)) { v.keyAdded = true; ev(r, 'hostKey', l); return; }
+      if ((m = /^(\S+)@(\S+?)'s password:/.exec(t))) { v.passwordPrompts++; v.user = v.user || m[1]; v.host = v.host || m[2]; ev(r, 'password', l); return; }
+      if (/^Permission denied, please try again\.?$/.test(t)) { v.denied++; ev(r, 'error', l); return; }
+      if (/^\S+@\S+: Permission denied \(/.test(t)) { v.deniedFinal = true; ev(r, 'error', l); return; }
+      if ((m = /^ssh: connect to host (\S+) port (\d+): (.+)$/.exec(t))) { v.connectError = m[3].trim(); v.host = v.host || m[1]; ev(r, 'error', l); return; }
+      if ((m = /^ssh: Could not resolve hostname (\S+?):\s*(.*)$/.exec(t))) { v.resolveFail = m[1]; ev(r, 'error', l); return; }
+      if (/^Host key verification failed/.test(t)) { v.hostKeyFailed = true; ev(r, 'error', l); return; }
+      if (/^Last login: /.test(t)) { v.lastLogin = true; ev(r, 'login', l); return; }
+      if (/^Web console: |^Activate the web console/.test(t)) { ev(r, 'login', l); return; }
+      r.unparsed.push(l);
+    });
+    const after = (extra && extra.promptsAfter) || [];
+    v.linuxPrompt = after.find(l => LINUX_PROMPT.test(l)) || null;
+    if (v.linuxPrompt) ev(r, 'login', v.linuxPrompt);
+    r.values = v;
+    const err = v.connectError || '';
+    if (v.lastLogin || v.linuxPrompt) {
+      r.outcome = 'connected';
+      r.message = (v.user && v.host ? v.host + '에 ' + v.user + ' 계정으로 ' : '') + '접속했다. 지금부터 이 창에서 입력하는 명령은 VM 안에서 실행된다.';
+      if (v.denied) r.notes.push('비밀번호를 ' + v.denied + '번 틀렸지만(Permission denied, please try again.) 다시 입력해 접속했다.');
+      if (v.keyAdded) r.notes.push('Warning: Permanently added ...는 처음 접속할 때 yes라고 답해 이 VM을 접속 목록에 등록했다는 정상 메시지다.');
+      if (!v.linuxPrompt) r.notes.push('Last login 줄은 보이지만 리눅스 프롬프트 줄은 붙여 넣지 않았다. 프롬프트가 $로 끝나는 줄로 바뀌었는지 화면에서 확인한다.');
+    } else if (/timed out/i.test(err)) {
+      r.status = 'fail'; r.outcome = 'timeout';
+      r.message = '정해진 시간 안에 ' + (v.host || 'VM') + '에서 아무 응답도 받지 못했다(Connection timed out). IP 주소를 잘못 입력했거나 VM이 꺼져 있을 수 있다.';
+    } else if (/refused/i.test(err)) {
+      r.status = 'fail'; r.outcome = 'refused';
+      r.message = (v.host || 'VM') + '까지는 닿았지만 SSH 접속을 받는 프로그램(sshd)이 실행되고 있지 않다는 거절 응답이 돌아왔다(Connection refused).';
+    } else if (err) {
+      r.status = 'fail'; r.outcome = 'connect-error';
+      r.message = (v.host || 'VM') + '에 연결하지 못했다(' + err + '). 0-2에서 확인한 주소와 VM 상태를 다시 확인한다.';
+    } else if (v.resolveFail) {
+      r.status = 'fail'; r.outcome = 'resolve';
+      r.message = '"' + v.resolveFail + '"를 접속할 컴퓨터의 주소로 찾지 못했다. @ 뒤에 0-2에서 확인한 VM의 IPv4 주소를 정확히 넣었는지 확인한다.';
+    } else if (v.deniedFinal || v.denied) {
+      r.status = 'fail'; r.outcome = 'denied';
+      r.message = '계정 이름이나 비밀번호가 틀렸다(Permission denied).' + (v.user === 'root' ? ' root 계정은 기본 설정상 비밀번호로 SSH 접속할 수 없으므로 일반 계정으로 접속한다.' : '');
+    } else if (v.hostKeyFailed) {
+      r.status = 'fail'; r.outcome = 'hostkey-refused';
+      r.message = '접속할 컴퓨터가 맞는지 묻는 질문에 yes라고 답하지 않아 접속을 멈췄다(Host key verification failed). 다시 실행하고 yes를 입력한다.';
+    } else if (v.hostKeyQuestion && !v.keyAdded && !v.passwordPrompts) {
+      r.status = 'partial'; r.outcome = 'host-question';
+      r.message = '처음 접속하는 컴퓨터라서 접속할 컴퓨터가 맞는지 묻고 있다. 내 VM에 접속하는 것이 맞으므로 yes를 입력하고 Enter를 누른 뒤 계속 진행한다.';
+    } else if (v.passwordPrompts) {
+      r.status = 'partial'; r.outcome = 'password';
+      r.message = '비밀번호를 묻는 줄까지만 있다. 비밀번호를 입력한 뒤 나온 줄(리눅스 프롬프트 또는 오류)까지 복사한다.';
+    } else {
+      r.status = 'unknown';
+      r.message = 'ssh 접속 결과를 알 수 있는 줄이 없다.';
+    }
+    return r;
+  }
+
   const PARSERS = {
+    'os-release': parseOsRelease, dnf: parseDnf, ssh: parseSsh,
     'ip-br-addr': parseIpBr, 'ip-addr': parseIpAddr, 'ip-route': parseIpRoute, 'ip-route-get': parseIpRouteGet,
     nslookup: parseNslookup, ping: parsePing, 'win-ping': parseWinPing, ss: parseSs, nc: parseNc,
     traceroute: parseTraceroute, tnc: parseTnc,
@@ -1000,7 +1215,9 @@
     }
 
     // ip addr show dev는 명령 정보가 필요하다
-    const r = PARSERS[kind](seg.lines, cmd && (cmd.kind === kind || compatible(cmd.kind, kind)) ? cmd : null);
+    // ssh는 명령 뒤에 나타난 프롬프트 줄(접속 성공 표시)도 함께 본다
+    const promptsAfter = seg.promptLines.filter(l => !(matchPrompt(l) || {}).command).concat(...used.slice(used.indexOf(seg) + 1).map(s => s.promptLines));
+    const r = PARSERS[kind](seg.lines, cmd && (cmd.kind === kind || compatible(cmd.kind, kind)) ? cmd : null, { promptsAfter });
     Object.assign(base, {
       status: r.status, outcome: r.outcome, values: r.values, message: r.message,
       notes: base.notes.concat(r.notes), unparsed: r.unparsed,
@@ -1042,5 +1259,5 @@
     return blocks.map(b => ({ shell: b.shell, command: b.command, output: b.lines.join('\n').replace(/\s+$/, '') }));
   }
 
-  return { analyze, ssPort, parseSamples, parseCommand, detect: lines => detect(splitLines(lines)), STATUS, KINDS, PACKAGES };
+  return { analyze, ssPort, classifyOs, parseSamples, parseCommand, detect: lines => detect(splitLines(lines)), STATUS, KINDS, PACKAGES };
 });

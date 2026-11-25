@@ -1,0 +1,93 @@
+### $ cat /etc/os-release
+NAME="CentOS Stream"
+VERSION="10 (Coughlan)"
+RELEASE_TYPE=stable
+ID="centos"
+ID_LIKE="rhel fedora"
+VERSION_ID="10"
+PLATFORM_ID="platform:el10"
+PRETTY_NAME="CentOS Stream 10 (Coughlan)"
+ANSI_COLOR="0;31"
+LOGO="fedora-logo-icon"
+CPE_NAME="cpe:/o:centos:centos:10"
+HOME_URL="https://centos.org/"
+VENDOR_NAME="CentOS"
+VENDOR_URL="https://centos.org/"
+BUG_REPORT_URL="https://issues.redhat.com/"
+REDHAT_SUPPORT_PRODUCT="Red Hat Enterprise Linux 10"
+REDHAT_SUPPORT_PRODUCT_VERSION="CentOS Stream"
+
+### $ ping -c 4 8.8.8.8
+PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
+64 bytes from 8.8.8.8: icmp_seq=1 ttl=128 time=51.1 ms
+64 bytes from 8.8.8.8: icmp_seq=2 ttl=128 time=1215 ms
+64 bytes from 8.8.8.8: icmp_seq=3 ttl=128 time=391 ms
+64 bytes from 8.8.8.8: icmp_seq=4 ttl=128 time=160 ms
+
+--- 8.8.8.8 ping statistics ---
+4 packets transmitted, 4 received, 0% packet loss, time 3053ms
+rtt min/avg/max/mdev = 51.054/454.267/1215.247/456.140 ms, pipe 2
+
+### $ ping -c 4 google.com
+PING google.com (142.250.23.138) 56(84) bytes of data.
+64 bytes from zj-in-f138.1e100.net (142.250.23.138): icmp_seq=1 ttl=128 time=135 ms
+64 bytes from zj-in-f138.1e100.net (142.250.23.138): icmp_seq=2 ttl=128 time=43.3 ms
+64 bytes from zj-in-f138.1e100.net (142.250.23.138): icmp_seq=3 ttl=128 time=42.5 ms
+64 bytes from zj-in-f138.1e100.net (142.250.23.138): icmp_seq=4 ttl=128 time=50.8 ms
+
+--- google.com ping statistics ---
+4 packets transmitted, 4 received, 0% packet loss, time 3004ms
+rtt min/avg/max/mdev = 42.469/67.912/135.116/38.935 ms
+
+### $ sudo dnf install -y bind-utils traceroute nmap-ncat
+[sudo] password for jin: 
+CentOS Stream 10 - BaseOS                       5.2 kB/s | 5.6 kB     00:01    
+CentOS Stream 10 - BaseOS                       666 kB/s | 2.3 MB     00:03    
+CentOS Stream 10 - AppStream                    6.6 kB/s | 4.7 kB     00:00    
+CentOS Stream 10 - AppStream                                                                   378 kB/s | 2.4 MB     00:06    
+CentOS Stream 10 - Extras packages                                                             3.6 kB/s | 5.7 kB     00:01    
+Package bind-utils-32:9.18.33-31.el10.x86_64 is already installed.
+Package nmap-ncat-4:7.92-5.el10.x86_64 is already installed.
+Dependencies resolved.
+===============================================================================================================================
+ Package                        Architecture               Version                            Repository                  Size
+===============================================================================================================================
+Installing:
+ traceroute                     x86_64                     3:2.1.6-3.el10                     baseos                      60 k
+
+Transaction Summary
+===============================================================================================================================
+Install  1 Package
+
+Total download size: 60 k
+Installed size: 104 k
+Downloading Packages:
+traceroute-2.1.6-3.el10.x86_64.rpm                                                              30 kB/s |  60 kB     00:01    
+-------------------------------------------------------------------------------------------------------------------------------
+Total                                                                                           29 kB/s |  60 kB     00:02     
+CentOS Stream 10 - BaseOS                                                                      1.6 MB/s | 1.6 kB     00:00    
+Importing GPG key 0x8483C65D:
+ Userid     : "CentOS (CentOS Official Signing Key) <security@centos.org>"
+ Fingerprint: 99DB 70FA E1D7 CE22 7FB6 4882 05B5 55B3 8483 C65D
+ From       : /etc/pki/rpm-gpg/RPM-GPG-KEY-centosofficial-SHA256
+Key imported successfully
+Running transaction check
+Transaction check succeeded.
+Running transaction test
+Transaction test succeeded.
+Running transaction
+  Preparing        :                                                                                                       1/1 
+  Installing       : traceroute-3:2.1.6-3.el10.x86_64                                                                      1/1 
+  Running scriptlet: traceroute-3:2.1.6-3.el10.x86_64                                                                      1/1 
+
+Installed:
+  traceroute-3:2.1.6-3.el10.x86_64                                                                                             
+
+Complete!
+
+### PS> ssh jin@172.16.89.128
+jin@172.16.89.128's password:
+Web console: https://localhost:9090/ or https://172.16.89.128:9090/
+
+Last login: Wed Nov 25 17:52:07 2026 from 172.16.89.1
+jin@localhost:~$

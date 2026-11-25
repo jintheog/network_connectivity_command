@@ -1,7 +1,7 @@
 /*
  * tests/cases.js — 출력 분석 엔진 테스트 (node: test.js, 브라우저: test.html에서 함께 쓴다)
  *
- * 실제 출력: samples/samples-linux.txt, samples/windows.txt
+ * 실제 출력: samples/samples-linux.txt, samples/windows.txt, samples/samples-setup.txt(0단계)
  * MADE_UP(아래)의 출력은 샘플에 없는 경우를 시험하려고 직접 만든 예시다. 이름 앞에 [직접 만든 예시]를 붙인다.
  */
 (function (root, factory) {
@@ -59,11 +59,26 @@
     // Windows ping: 통계에 받음 = 2인데 응답 줄은 1개만 복사한 경우
     winPingMissingLine: 'Ping 172.16.89.128 32바이트 데이터 사용:\n172.16.89.128의 응답: 바이트=32 시간<1ms TTL=64\n\n172.16.89.128에 대한 Ping 통계:\n    패킷: 보냄 = 4, 받음 = 2, 손실 = 2 (50% 손실),',
     osRelease: 'NAME="CentOS Stream"\nVERSION="10 (Coughlan)"\nID_LIKE="rhel fedora"\nVERSION_ID="10"\nPRETTY_NAME="CentOS Stream 10 (Coughlan)"',
+    // ----- 0단계 실패 형식 (samples-setup.txt에 없는 경우) -----
+    osCentos7: '[root@localhost ~]# cat /etc/os-release\nNAME="CentOS Linux"\nVERSION="7 (Core)"\nID="centos"\nID_LIKE="rhel fedora"\nVERSION_ID="7"\nPRETTY_NAME="CentOS Linux 7 (Core)"',
+    osNoFile: '[jin@localhost ~]$ cat /etc/os_release\ncat: /etc/os_release: No such file or directory',
+    osNoPretty: 'NAME="CentOS Stream"\nVERSION="10 (Coughlan)"',
+    dnfNothing: "[jin@localhost ~]$ sudo dnf install -y bind-utils traceroute nmap-ncat\n[sudo] password for jin: \nLast metadata expiration check: 0:12:03 ago on Wed 25 Nov 2026 05:40:11 PM KST.\nPackage bind-utils-32:9.18.33-31.el10.x86_64 is already installed.\nPackage traceroute-3:2.1.6-3.el10.x86_64 is already installed.\nPackage nmap-ncat-4:7.92-5.el10.x86_64 is already installed.\nDependencies resolved.\nNothing to do.\nComplete!",
+    dnfWrongPw: "[jin@localhost ~]$ sudo dnf install -y bind-utils traceroute nmap-ncat\n[sudo] password for jin: \nSorry, try again.\n[sudo] password for jin: \nSorry, try again.\n[sudo] password for jin: \nsudo: 3 incorrect password attempts",
+    dnfNotSudoer: '[jin@localhost ~]$ sudo dnf install -y bind-utils traceroute nmap-ncat\n[sudo] password for jin: \njin is not in the sudoers file.',
+    dnfRepoFail: "[jin@localhost ~]$ sudo dnf install -y bind-utils traceroute nmap-ncat\nCentOS Stream 10 - BaseOS                       0.0  B/s |   0  B     00:30    \nErrors during downloading metadata for repository 'baseos':\n  - Curl error (6): Couldn't resolve host name for https://mirrors.centos.org/metalink?repo=centos-baseos-10-stream&arch=x86_64 [Could not resolve host: mirrors.centos.org]\nError: Failed to download metadata for repo 'baseos': Cannot prepare internal mirrorlist: Curl error (6): Couldn't resolve host name",
+    dnfNoMatch: '[jin@localhost ~]$ sudo dnf install -y bind-utils tracerout nmap-ncat\nLast metadata expiration check: 0:20:11 ago on Wed 25 Nov 2026 05:40:11 PM KST.\nNo match for argument: tracerout\nError: Unable to find a match: tracerout',
+    sshTimeout: 'PS C:\\Users\\jin> ssh jin@172.16.89.200\nssh: connect to host 172.16.89.200 port 22: Connection timed out',
+    sshRefused: 'PS C:\\Users\\jin> ssh jin@172.16.89.128\nssh: connect to host 172.16.89.128 port 22: Connection refused',
+    sshDenied: "PS C:\\Users\\jin> ssh root@172.16.89.128\nroot@172.16.89.128's password:\nPermission denied, please try again.\nroot@172.16.89.128's password:\nPermission denied, please try again.\nroot@172.16.89.128's password:\nroot@172.16.89.128: Permission denied (publickey,gssapi-keyex,gssapi-with-mic,password).",
+    sshHostQuestion: "PS C:\\Users\\jin> ssh jin@172.16.89.128\nThe authenticity of host '172.16.89.128 (172.16.89.128)' can't be established.\nED25519 key fingerprint is SHA256:Qx3o1n0mXf2kq9C8Yb7Lr2dW5uVtA6sZ0hPeJcK4gM8.\nThis key is not known by any other names.\nAre you sure you want to continue connecting (yes/no/[fingerprint])?",
+    sshFirstLogin: "PS C:\\Users\\jin> ssh jin@172.16.89.128\nThe authenticity of host '172.16.89.128 (172.16.89.128)' can't be established.\nED25519 key fingerprint is SHA256:Qx3o1n0mXf2kq9C8Yb7Lr2dW5uVtA6sZ0hPeJcK4gM8.\nThis key is not known by any other names.\nAre you sure you want to continue connecting (yes/no/[fingerprint])? yes\nWarning: Permanently added '172.16.89.128' (ED25519) to the list of known hosts.\njin@172.16.89.128's password:\nPermission denied, please try again.\njin@172.16.89.128's password:\nLast login: Wed Nov 25 17:52:07 2026 from 172.16.89.1\n[jin@localhost ~]$ ",
   };
 
   function runCases(A, sampleText) {
     const linux = A.parseSamples(sampleText.linux);
     const win = A.parseSamples(sampleText.win);
+    const setup = A.parseSamples(sampleText.setup || '');
     const block = (set, cmd) => {
       const b = set.find(x => x.command === cmd);
       if (!b) throw new Error('샘플에 없는 명령: ' + cmd);
@@ -71,6 +86,7 @@
     };
     const L = cmd => block(linux, cmd);
     const W = cmd => block(win, cmd);
+    const S = cmd => block(setup, cmd);
     // 실제 샘플을 다른 형태로 붙여 넣은 것처럼 바꾸기
     const withPrompt = (prompt, cmd, out) => prompt + ' ' + cmd + '\n' + out + '\n' + prompt + ' ';
     const crlf = s => s.replace(/\n/g, '\r\n');
@@ -480,6 +496,82 @@
       const r = A.analyze('[jin@localhost ~]$ Test-NetConnection 172.16.89.128 -Port 22\nbash: Test-NetConnection: command not found...');
       t.eq([r.status, r.values.wrongPlace, r.values.install], ['notfound', 'linux', undefined]);
       t.ok(/exit/.test(r.message), 'exit 안내');
+    });
+
+    // ---------- 0단계: 실습 환경 준비 (samples-setup.txt) ----------
+    test('실제 샘플(0단계): 블록 5개를 읽고 명령 줄을 붙여도 모두 정상으로 읽는다', t => {
+      t.eq(setup.map(b => b.command), ['cat /etc/os-release', 'ping -c 4 8.8.8.8', 'ping -c 4 google.com', 'sudo dnf install -y bind-utils traceroute nmap-ncat', 'ssh jin@172.16.89.128']);
+      const want = ['os-release', 'ping', 'ping', 'dnf', 'ssh'];
+      setup.forEach((b, i) => {
+        const r = A.analyze(b.output, { expect: want[i] });
+        t.eq([r.kind, r.status], [want[i], 'ok'], b.command + ' (출력만)');
+        const pre = b.shell === 'PS>' ? 'PS C:\\Users\\jin> ' : 'jin@localhost:~$ ';
+        const r2 = A.analyze(pre + b.command + '\n' + b.output, { expect: want[i] });
+        t.eq([r2.kind, r2.status], [want[i], 'ok'], b.command + ' (명령 줄 포함)');
+      });
+    });
+    test('실제 cat /etc/os-release: PRETTY_NAME과 지원 버전 판정', t => {
+      const r = A.analyze(S('cat /etc/os-release'), { expect: 'os-release' });
+      t.eq([r.values.prettyName, r.values.versionId, r.values.idLike, r.values.support], ['CentOS Stream 10 (Coughlan)', '10', 'rhel fedora', 'supported']);
+      t.ok(has(r.evidence.prettyName, 'PRETTY_NAME='), '근거 줄');
+      t.eq(r.unparsed, [], '모든 줄을 알아본다');
+    });
+    test('[직접 만든 예시] os-release 판정: CentOS Linux 7은 지원 종료, 파일 이름 오타, PRETTY_NAME 누락', t => {
+      const a = A.analyze(MADE_UP.osCentos7, { expect: 'os-release' });
+      t.eq([a.status, a.values.support], ['ok', 'eol']);
+      const b = A.analyze(MADE_UP.osNoFile, { expect: 'os-release' });
+      t.eq([b.status, b.outcome, b.kind], ['fail', 'no-file', 'os-release']);
+      t.ok(/하이픈/.test(b.message), '철자 안내');
+      const c = A.analyze(MADE_UP.osNoPretty, { expect: 'os-release' });
+      t.eq(c.status, 'partial');
+    });
+    test('[직접 만든 예시] 학습자가 적은 OS 이름 판정(classifyOs)', t => {
+      const s = x => A.classifyOs(x).support;
+      t.eq(['CentOS Stream 10 (Coughlan)', 'CentOS Stream 9', 'Rocky Linux 9.4 (Blue Onyx)', 'AlmaLinux 10.0', 'CentOS Linux 7 (Core)', 'CentOS Linux 8', 'CentOS Stream 8', 'Rocky Linux 8.10', 'Ubuntu 24.04 LTS', ''].map(s),
+        ['supported', 'supported', 'supported', 'supported', 'eol', 'eol', 'eol', 'unlisted', 'other', 'other']);
+    });
+    test('실제 sudo dnf install: traceroute는 새로 설치, bind-utils·nmap-ncat은 이미 설치', t => {
+      const cmd = 'sudo dnf install -y bind-utils traceroute nmap-ncat';
+      const r = A.analyze('[jin@localhost ~]$ ' + cmd + '\n' + S(cmd), { expect: 'dnf' });
+      t.eq([r.status, r.outcome], ['ok', 'complete']);
+      t.eq(r.values.packages, { 'bind-utils': 'already', traceroute: 'new', 'nmap-ncat': 'already' });
+      t.eq([r.values.gpgImported, r.values.sudoPrompt], [true, true]);
+      t.ok(has(r.evidence['pkg:traceroute'], 'traceroute'), '근거 줄');
+      t.eq(r.unparsed, [], '모든 줄을 알아본다');
+    });
+    test('[직접 만든 예시] dnf: Nothing to do / 비밀번호 3번 틀림 / sudoers 없음 / 저장소 실패 / 패키지 이름 오타', t => {
+      const a = A.analyze(MADE_UP.dnfNothing, { expect: 'dnf' });
+      t.eq([a.status, a.outcome, a.values.packages.traceroute], ['ok', 'nothing', 'already']);
+      t.eq([A.analyze(MADE_UP.dnfWrongPw).status, A.analyze(MADE_UP.dnfWrongPw).outcome], ['fail', 'wrong-password']);
+      t.eq(A.analyze(MADE_UP.dnfNotSudoer).outcome, 'not-sudoer');
+      t.eq(A.analyze(MADE_UP.dnfRepoFail, { expect: 'dnf' }).outcome, 'repo');
+      const e = A.analyze(MADE_UP.dnfNoMatch, { expect: 'dnf' });
+      t.eq([e.status, e.outcome, e.values.noMatch], ['fail', 'no-match', ['tracerout']]);
+    });
+    test('실제 ssh 접속: 비밀번호 뒤 리눅스 프롬프트가 나오면 접속 성공', t => {
+      const r = A.analyze('PS C:\\Users\\jin> ssh jin@172.16.89.128\n' + S('ssh jin@172.16.89.128'), { expect: 'ssh' });
+      t.eq([r.status, r.outcome, r.values.user, r.values.host], ['ok', 'connected', 'jin', '172.16.89.128']);
+      t.ok(has(r.evidence.login, 'jin@localhost:~$'), '프롬프트 줄이 근거');
+    });
+    test('[직접 만든 예시] ssh: timed out / refused / Permission denied(root) / 호스트 확인 질문 / 첫 접속 후 성공 / ssh 없음', t => {
+      t.eq([A.analyze(MADE_UP.sshTimeout).status, A.analyze(MADE_UP.sshTimeout).outcome], ['fail', 'timeout']);
+      t.eq(A.analyze(MADE_UP.sshRefused).outcome, 'refused');
+      const d = A.analyze(MADE_UP.sshDenied, { expect: 'ssh' });
+      t.eq([d.status, d.outcome, d.values.user], ['fail', 'denied', 'root']);
+      t.ok(/root/.test(d.message), 'root 안내');
+      const q = A.analyze(MADE_UP.sshHostQuestion, { expect: 'ssh' });
+      t.eq([q.status, q.outcome], ['partial', 'host-question']);
+      t.ok(/yes/.test(q.message), 'yes 안내');
+      const f = A.analyze(MADE_UP.sshFirstLogin, { expect: 'ssh' });
+      t.eq([f.status, f.outcome, f.values.denied, f.values.keyAdded], ['ok', 'connected', 1, true]);
+      const n = A.analyze(MADE_UP.notFoundWinSsh, { expect: 'ssh' });
+      t.eq([n.status, n.kind], ['notfound', 'ssh']);
+      t.ok(/OpenSSH/.test(n.message), 'OpenSSH 안내');
+    });
+    test('[직접 만든 예시] ssh로 접속한 뒤 이어서 실행한 ip -br addr도 함께 붙여 넣으면 각각 읽는다', t => {
+      const txt = MADE_UP.sshFirstLogin + 'ip -br addr\n' + 'lo               UNKNOWN        127.0.0.1/8 ::1/128\nens160           UP             192.168.10.130/24';
+      t.eq(A.analyze(txt, { expect: 'ssh' }).outcome, 'connected');
+      t.eq(A.analyze(txt, { expect: 'ip-br-addr' }).values.primary.ipv4, '192.168.10.130');
     });
 
     const passed = results.filter(r => r.ok).length;

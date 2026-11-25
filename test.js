@@ -6,7 +6,7 @@ const A = require('./analyzer.js');
 const { runCases } = require('./tests/cases.js');
 
 const read = f => fs.readFileSync(path.join(__dirname, 'samples', f), 'utf8');
-const r = runCases(A, { linux: read('samples-linux.txt'), win: read('windows.txt') });
+const r = runCases(A, { linux: read('samples-linux.txt'), win: read('windows.txt'), setup: read('samples-setup.txt') });
 r.results.forEach(x => {
   console.log((x.ok ? 'PASS ' : 'FAIL ') + x.name);
   x.errors.forEach(e => console.log('     - ' + e));
